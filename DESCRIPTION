@@ -1,8 +1,8 @@
 Package: SthdReddsWenatchee
-Title: What the Package Does (One Line, Title Case)
+Title: Estimate Steelhead Redds in Wenatchee Subbasin
 Version: 0.0.0.9000
 Authors@R:
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
+    person("Kevin", "See", , "Kevin.See@dfw.wa.gov", role = c("aut", "cre"))
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
 ByteCompile: true
