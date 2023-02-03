@@ -1,4 +1,4 @@
-#' @title Estimate Correlation Between Reaches
+#' @title Query Redd Data
 #'
 #' @description Prepares data by querying specific file on a WDFW Sharepoint site, and filters for selected year(s).
 #'
@@ -6,7 +6,7 @@
 #'
 #' @param file_path path to data file
 #' @param file_name name of Excel file containing redd data in a very particular format
-#' @param year which year or years should be included in this query?
+#' @param query_year which year or years should be included in this query?
 #'
 #' @import rlang purrr dplyr janitor lubridate readxl forcats dataRetrieval
 #' @return dataframe
@@ -74,6 +74,12 @@ query_redd_data <- function(
     dplyr::mutate(naive_density_km = visible_redds / length_km,
                   exp_sp_total_log = log(exp_sp_total))
 
+  if(nrow(redd_df) == 0) {
+    cat(paste("No redd data found for",
+              paste(query_year, collapse = ", "),
+              ".\n"))
+    return(NULL)
+  }
 
   cat("Querying USGS for discharge data\n")
 

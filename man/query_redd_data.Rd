@@ -2,7 +2,7 @@
 % Please edit documentation in R/query_redd_data.R
 \name{query_redd_data}
 \alias{query_redd_data}
-\title{Estimate Correlation Between Reaches}
+\title{Query Redd Data}
 \usage{
 query_redd_data(
   file_path =
@@ -16,7 +16,7 @@ query_redd_data(
 
 \item{file_name}{name of Excel file containing redd data in a very particular format}
 
-\item{year}{which year or years should be included in this query?}
+\item{query_year}{which year or years should be included in this query?}
 }
 \value{
 dataframe
