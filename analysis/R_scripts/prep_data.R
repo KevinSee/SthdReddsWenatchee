@@ -4,20 +4,20 @@
 # Last Modified: 2/3/2023
 # Notes:
 
-#-----------------------------------------------------------------
-# if needed, install these packages from CRAN
-install.packages(c("tidyverse",
-                   "readxl",
-                   "janitor",
-                   "magrittr",
-                   "msm",
-                   "here",
-                   "DescTools",
-                   "devtools"))
-# if needed, install these packages from GitHub
-remotes::install_github("kevinsee/PITcleanr")
-remotes::install_github("kevinsee/sroem")
-remotes::install_github("wdfw-fp/SthdReddsWenatchee")
+# #-----------------------------------------------------------------
+# # if needed, install these packages from CRAN
+# install.packages(c("tidyverse",
+#                    "readxl",
+#                    "janitor",
+#                    "magrittr",
+#                    "msm",
+#                    "here",
+#                    "DescTools",
+#                    "devtools"))
+# # if needed, install these packages from GitHub
+# remotes::install_github("kevinsee/PITcleanr")
+# remotes::install_github("kevinsee/sroem")
+# remotes::install_github("wdfw-fp/SthdReddsWenatchee")
 
 #-----------------------------------------------------------------
 # load needed libraries
