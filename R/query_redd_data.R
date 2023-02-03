@@ -69,7 +69,10 @@ query_redd_data <- function(
         forcats::fct_relevel,
         "MH1", "T1", "WN1",
         after = Inf)) |>
-    dplyr::filter(spawn_year %in% query_year)
+    dplyr::filter(spawn_year %in% query_year) |>
+    # calculate redd density and log of experience
+    dplyr::mutate(naive_density_km = visible_redds / length_km,
+                  exp_sp_total_log = log(exp_sp_total))
 
 
   cat("Querying USGS for discharge data\n")
