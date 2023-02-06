@@ -7,7 +7,7 @@
 #'
 #' @import rlang purrr dplyr readxl janitor tidyr lubridate
 #' @importFrom DescTools BinomCI
-#' @return dataframe
+#' @return NULL, but saves an .Rdata object with output for a given year.
 #' @export
 
 prep_wen_sthd_data <- function(
@@ -113,6 +113,7 @@ prep_wen_sthd_data <- function(
                                      sheet = "Sex Error Rates") |>
     janitor::clean_names() |>
     select(spawn_year:n_false) |>
+    dplyr::filter(spawn_year %in% query_year) |>
     rowwise() |>
     mutate(binom_ci = map2(n_false,
                            n_tags,
@@ -311,7 +312,6 @@ prep_wen_sthd_data <- function(
                      ~ sqrt(sum(.^2))),
               .groups = "drop")
 
-
   #-----------------------------------------------------------------
   # save
   for(yr in query_year) {
@@ -321,25 +321,29 @@ prep_wen_sthd_data <- function(
 
     if(!is.null(redd_df_all)) {
       redd_df <- redd_df_all |>
-        filter(spawn_year == yr)
+        dplyr::filter(spawn_year == yr)
     } else {
       redd_df <- NULL
     }
 
     wen_tags <- wen_tags_all |>
-      filter(spawn_year == yr)
+      dplyr::filter(spawn_year == yr)
+
+    sex_err <- sex_err_rate |>
+      dplyr::filter(spawn_year == yr)
 
     fpr_df <- fpr_all |>
-      filter(spawn_year == yr)
+      dplyr::filter(spawn_year == yr)
 
     trib_spawners <- trib_spawners_all |>
-      filter(spawn_year == yr)
+      dplyr::filter(spawn_year == yr)
 
     escp_wen <- escp_wen_all |>
-      filter(spawn_year == yr)
+      dplyr::filter(spawn_year == yr)
 
     save(redd_df,
          wen_tags,
+         sex_err,
          fpr_df,
          trib_spawners,
          escp_wen,
