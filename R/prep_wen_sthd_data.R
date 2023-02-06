@@ -358,7 +358,8 @@ prep_wen_sthd_data <- function(
       dplyr::filter(spawn_year == yr)
 
     rem_df <- removal_df |>
-      dplyr::filter(spawn_year == yr)
+      dplyr::filter(spawn_year == yr,
+                    subbasin == "Wenatchee")
 
     save(redd_df,
          wen_tags,
