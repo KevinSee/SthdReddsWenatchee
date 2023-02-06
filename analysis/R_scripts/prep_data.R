@@ -19,6 +19,9 @@
 # remotes::install_github("kevinsee/sroem")
 # remotes::install_github("wdfw-fp/SthdReddsWenatchee")
 
+# if a member of WDFW, you can install a WDFW html template by following
+# instructions here: https://github.com/wdfw-fp/wdfwTemplates
+
 #-----------------------------------------------------------------
 # load needed libraries
 library(tidyverse)
