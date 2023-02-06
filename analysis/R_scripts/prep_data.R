@@ -2,7 +2,7 @@
 # Purpose: Prep steelhead redd data and PIT tag data from the Wenatchee
 # Created: 2/3/2023
 # Last Modified: 2/3/2023
-# Notes:
+# Notes: R will send error if any of the Excel files are open on the user's computer
 
 # #-----------------------------------------------------------------
 # # if needed, install these packages from CRAN
