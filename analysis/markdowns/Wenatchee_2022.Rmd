@@ -90,14 +90,13 @@ library(lubridate)
 library(janitor)
 library(magrittr)
 library(msm)
+library(sroem)
+library(here)
 library(knitr)
 library(kableExtra)
 library(english)
-# library(SthdReddsWenatchee)
-# devtools::load_all()
-library(sroem)
-library(here)
 
+# set default plotting theme
 theme_set(theme_bw())
 
 # knitr options
