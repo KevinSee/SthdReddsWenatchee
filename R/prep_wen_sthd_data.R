@@ -100,7 +100,7 @@ prep_wen_sthd_data <- function(
     dplyr::select(-contains("Wild"),
                   -contains("Hatchery")) |>
     dplyr::rowwise() |>
-    dplyr::mutate(fpr_se = deltamethod(~ x1 / (1 - x1) + 1,
+    dplyr::mutate(fpr_se = msm::deltamethod(~ x1 / (1 - x1) + 1,
                                        mean = prop_m,
                                        cov = prop_se^2)) |>
     dplyr::ungroup() |>
@@ -110,13 +110,15 @@ prep_wen_sthd_data <- function(
   cat("\t Adjusting fish/redd.\n")
 
   # adjust fish / redd for errors in Priest sex calls
+  # the excel file contains rounded numbers, so re-calculate
+  # various statistics for use in analyses
   sex_err_rate <- readxl::read_excel(paste(dabom_file_path,
                                            dabom_file_name,
                                            sep = "/"),
                                      sheet = "Sex Error Rates") |>
     janitor::clean_names() |>
     dplyr::select(spawn_year:n_false) |>
-    dplyr::filter(spawn_year %in% query_year) |>
+    dplyr::filter(spawn_year %in% query_year) #|>
     dplyr::rowwise() |>
     dplyr::mutate(binom_ci = map2(n_false,
                                   n_tags,
