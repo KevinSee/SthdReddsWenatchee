@@ -4,6 +4,20 @@
 #'
 #' @author Kevin See
 #'
+#' @param redd_file_path
+#' @param redd_file_name
+#' @param dabom_file_path
+#' @param dabom_file_name
+#' @param brood_file_path
+#' @param brood_file_name
+#' @param removal_file_path
+#' @param removal_file_name
+#' @param n_observers
+#' @param query_year
+#' @param save_rda
+#' @param save_file_path
+#' @param save_file_name
+#'
 #'
 #' @import rlang purrr dplyr readxl readr janitor tidyr lubridate
 #' @importFrom DescTools BinomCI
@@ -16,13 +30,19 @@ prep_wen_sthd_data <- function(
   redd_file_name = "Wenatchee_Redd_Surveys.xlsx",
   dabom_file_path = "T:/DFW-Team FP Upper Columbia Escapement - General/UC_Sthd/estimates",
   dabom_file_name = "UC_STHD_Model_Output.xlsx",
-  removal_file_path = "T:/DFW-Team FP Upper Columbia Escapement - General/UC_Sthd/inputs/Redd Data",
-  removal_file_name = "UC_Removals.csv",
+  brood_file_path = "T:/DFW-Team FP Upper Columbia Escapement - General/UC_Sthd/inputs/Bio Data/Sex and Origin PRD-Brood Comparison Data",
+  brood_file_name = "STHD UC Brood Collections_2011 to current.xlsx",
+  removal_file_path = "T:/DFW-Team FP Upper Columbia Escapement - General/UC_Sthd/inputs/Fish Removals",
+  removal_file_name = "Master_STHD_Removals_2.18.23.MH.xlsx",
   n_observers = "two",
-  query_year = lubridate::year(lubridate::today()) - 1
+  query_year = lubridate::year(lubridate::today()) - 1,
+  save_rda = F,
+  save_by_year = T,
+  save_file_path = here::here("analysis/data/derived_data"),
+  save_file_name = NULL
 ) {
 
-  cat("\t Gathering redd data.\n")
+  message("\t Gathering redd data.\n")
 
   # load data for selected years
   redd_df_all <- query_redd_data(file_path = redd_file_path,
@@ -47,7 +67,7 @@ prep_wen_sthd_data <- function(
   #-----------------------------------------------------------------
   # load data on error calls for sex at Priest Rapids when fish were tagged
 
-  cat("\t Pulling PIT tag data.\n\n")
+  message("\t Pulling PIT tag data.\n\n")
 
   # get info on tags detected somewhere in the Wenatchee
   wen_tags_all <- readxl::read_excel(paste(dabom_file_path,
@@ -97,39 +117,85 @@ prep_wen_sthd_data <- function(
     dplyr::mutate(prop_m = n_male / n_sexed,
                   prop_se = sqrt((prop_m * (1 - prop_m)) / (n_sexed)),
                   fpr = (prop_m) / (1 - prop_m) + 1) |>
-    dplyr::select(-contains("Wild"),
-                  -contains("Hatchery")) |>
     dplyr::rowwise() |>
     dplyr::mutate(fpr_se = msm::deltamethod(~ x1 / (1 - x1) + 1,
-                                       mean = prop_m,
-                                       cov = prop_se^2)) |>
+                                            mean = prop_m,
+                                            cov = prop_se^2)) |>
     dplyr::ungroup() |>
     dplyr::mutate(phos = n_hatch / n_origin,
                   phos_se = sqrt((phos * (1 - phos)) / (n_origin)))
 
-  cat("\t Adjusting fish/redd.\n")
+  message("\t Adjusting fish/redd.\n")
 
   # adjust fish / redd for errors in Priest sex calls
   # the excel file contains rounded numbers, so re-calculate
   # various statistics for use in analyses
+  # estimate error rate for each sex
   sex_err_rate <- readxl::read_excel(paste(dabom_file_path,
                                            dabom_file_name,
                                            sep = "/"),
-                                     sheet = "Sex Error Rates") |>
+                                     sheet = "Tag Summary") |>
     janitor::clean_names() |>
-    dplyr::select(spawn_year:n_false) |>
-    dplyr::filter(spawn_year %in% query_year) #|>
-    dplyr::rowwise() |>
-    dplyr::mutate(binom_ci = map2(n_false,
-                                  n_tags,
-                                  .f = function(x, y) {
-                                    DescTools::BinomCI(x, y) |>
-                                      as_tibble()
-                                  })) |>
-    tidyr::unnest(binom_ci) |>
-    janitor::clean_names() |>
-    dplyr::rename(perc_false = est) |>
-    dplyr::mutate(perc_se = sqrt((perc_false * (1 - perc_false)) / n_tags))
+    select(spawn_year,
+           tag_code,
+           sex_field = sex) |>
+    inner_join(read_excel(paste(brood_file_path,
+                                brood_file_name,
+                                sep = "/"),
+                          sheet = "Brood Collected_PIT Tagged Only") |>
+                 clean_names() |>
+                 rename(tag_code = recaptured_pit) |>
+                 select(spawn_year,
+                        tag_code,
+                        sex_final) |>
+                 distinct(),
+               by = c("spawn_year",
+                      "tag_code")) |>
+    filter(!is.na(sex_final),
+           !is.na(sex_field)) |>
+    mutate(agree = if_else(sex_field == sex_final,
+                           T, F)) |>
+    group_by(spawn_year,
+             sex = sex_field) |>
+    summarize(n_tags = n_distinct(tag_code),
+              n_true = sum(agree),
+              n_false = sum(!agree),
+              .groups = "drop") |>
+    mutate(binom_ci = map2(n_false,
+                           n_tags,
+                           .f = function(x, y) {
+                             DescTools::BinomCI(x, y) |>
+                               as_tibble()
+                           })) |>
+    unnest(binom_ci) |>
+    clean_names() |>
+    rename(perc_false = est,
+           lowerci = lwr_ci,
+           upperci = upr_ci) |>
+    mutate(perc_se = sqrt((perc_false * (1 - perc_false)) / n_tags)) |>
+    relocate(perc_se,
+             .after = "perc_false")
+
+  #
+  #
+  # sex_err_rate <- readxl::read_excel(paste(dabom_file_path,
+  #                                          dabom_file_name,
+  #                                          sep = "/"),
+  #                                    sheet = "Sex Error Rates") |>
+  #   janitor::clean_names() |>
+  #   dplyr::select(spawn_year:n_false) |>
+  #   dplyr::filter(spawn_year %in% query_year) |>
+  #   dplyr::rowwise() |>
+  #   dplyr::mutate(binom_ci = map2(n_false,
+  #                                 n_tags,
+  #                                 .f = function(x, y) {
+  #                                   DescTools::BinomCI(x, y) |>
+  #                                     as_tibble()
+  #                                 })) |>
+  #   tidyr::unnest(binom_ci) |>
+  #   janitor::clean_names() |>
+  #   dplyr::rename(perc_false = est) |>
+  #   dplyr::mutate(perc_se = sqrt((perc_false * (1 - perc_false)) / n_tags))
 
   adj_fpr <- fpr_all |>
     dplyr::select(spawn_year,
@@ -200,6 +266,7 @@ prep_wen_sthd_data <- function(
     dplyr::left_join(fpr_all |>
                        dplyr::select(spawn_year,
                                      location,
+                                     n_wild,
                                      n_hatch,
                                      n_origin,
                                      starts_with("phos")),
@@ -238,15 +305,90 @@ prep_wen_sthd_data <- function(
 
   #-----------------------------------------------------------------
   # read in data about known removals of fish prior to spawning
-  removal_df <- readr::read_csv(paste(removal_file_path,
-                                      removal_file_name,
-                                      sep = "/")) |>
-    janitor::clean_names()
+  if(file.exists(paste(removal_file_path,
+                       removal_file_name,
+                       sep = "/"))) {
+    if(str_detect(removal_file_name, "csv$")) {
+      removal_df <- readr::read_csv(paste(removal_file_path,
+                                          removal_file_name,
+                                          sep = "/")) |>
+        janitor::clean_names() |>
+        dplyr::filter(subbasin == "Wenatchee",
+                      spawn_year %in% query_year)
+    }
+    if(str_detect(removal_file_name, "xls$") |
+       str_detect(removal_file_name, "xlsx$")) {
+
+      removal_df <- readxl::read_excel(paste(removal_file_path,
+                                             removal_file_name,
+                                             sep = "/"),
+                                       skip = 3,
+                                       col_names = c("run cycle",
+                                                     "spawn year",
+                                                     "population",
+                                                     "removal location",
+                                                     "agency",
+                                                     "adult trapping surplus H",
+                                                     "brood collections H",
+                                                     "harvest H",
+                                                     "adult trapping surplus W",
+                                                     "brood collections W",
+                                                     "harvest W",
+                                                     "adult trapping surplus T",
+                                                     "brood collections T",
+                                                     "harvest T")) |>
+        janitor::clean_names() |>
+        dplyr::mutate(
+          across(
+            c(ends_with("_h"),
+              ends_with("_w"),
+              ends_with("_t")),
+            as.numeric
+          )) |>
+        dplyr::filter(!is.na(spawn_year)) |>
+        dplyr::select(spawn_year:harvest_w) |>
+        tidyr::pivot_longer(cols = c(ends_with("_h"),
+                                     ends_with("_w")),
+                            names_to = "source",
+                            values_to = "removed") |>
+        dplyr::mutate(origin = str_sub(source, -1)) |>
+        dplyr::relocate(origin,
+                        .before = "removed") |>
+        dplyr::filter(origin %in% c("h", "w")) |>
+        dplyr::mutate(
+          across(
+            source,
+            str_remove,
+            "_h$"),
+          across(
+            source,
+            str_remove,
+            "_w$"),
+          across(
+            source,
+            ~ str_to_title(str_replace_all(., "_", " "))
+            ),
+          across(
+            origin,
+            recode,
+            "h" = "Hatchery",
+            "w" = "Natural"
+          )
+        ) |>
+        dplyr::filter(spawn_year %in% query_year,
+                      population == "Wenatchee")
+    }
+
+  } else {
+    message("Removal data not found.\n")
+    removal_df <- NULL
+  }
+
 
   #-----------------------------------------------------------------
   # pull in some estimates from DABOM
 
-  cat("\t Gathering PIT escapement estimates.\n")
+  message("\t Gathering PIT escapement estimates.\n")
 
   all_escp = readxl::read_excel(paste(dabom_file_path,
                                       dabom_file_name,
@@ -332,48 +474,120 @@ prep_wen_sthd_data <- function(
 
   #-----------------------------------------------------------------
   # save
-  for(yr in query_year) {
-    cat(paste("Saving data from spawn year",
-              yr,
-              ".\n\n"))
+  if(save_rda & save_by_year) {
+    for(yr in query_year) {
+      message(paste("Saving data from spawn year",
+                    yr,
+                    ".\n\n"))
 
-    if(!is.null(redd_df_all)) {
-      redd_df <- redd_df_all |>
+      if(!is.null(redd_df_all)) {
+        redd_df <- redd_df_all |>
+          dplyr::filter(spawn_year == yr)
+      } else {
+        redd_df <- NULL
+      }
+
+      wen_tags <- wen_tags_all |>
         dplyr::filter(spawn_year == yr)
+
+      sex_err <- sex_err_rate |>
+        dplyr::filter(spawn_year == yr)
+
+      fpr_df <- fpr_all |>
+        dplyr::filter(spawn_year == yr)
+
+      trib_spawners <- trib_spawners_all |>
+        dplyr::filter(spawn_year == yr)
+
+      escp_wen <- escp_wen_all |>
+        dplyr::filter(spawn_year == yr)
+
+      rem_df <- removal_df |>
+        dplyr::filter(spawn_year == yr)
+
+      if(is.null(save_file_name)) {
+        file_nm = paste0('wen_', yr, '.rda')
+      } else {
+        file_nm = save_file_name
+      }
+
+      save(redd_df,
+           wen_tags,
+           sex_err,
+           fpr_df,
+           trib_spawners,
+           escp_wen,
+           rem_df,
+           file = paste(save_file_path,
+                        file_nm,
+                        sep = "/"))
+      rm(file_nm)
+
+    }
+  }
+  else {
+    if(!is.null(redd_df_all)) {
+      redd_df <- redd_df_all
     } else {
       redd_df <- NULL
     }
 
-    wen_tags <- wen_tags_all |>
-      dplyr::filter(spawn_year == yr)
+    wen_tags <- wen_tags_all
 
-    sex_err <- sex_err_rate |>
-      dplyr::filter(spawn_year == yr)
+    sex_err <- sex_err_rate
 
-    fpr_df <- fpr_all |>
-      dplyr::filter(spawn_year == yr)
+    fpr_df <- fpr_all
 
-    trib_spawners <- trib_spawners_all |>
-      dplyr::filter(spawn_year == yr)
+    trib_spawners <- trib_spawners_all
 
-    escp_wen <- escp_wen_all |>
-      dplyr::filter(spawn_year == yr)
+    escp_wen <- escp_wen_all
 
-    rem_df <- removal_df |>
-      dplyr::filter(spawn_year == yr,
-                    subbasin == "Wenatchee")
+    rem_df <- removal_df
 
-    save(redd_df,
-         wen_tags,
-         sex_err,
-         fpr_df,
-         trib_spawners,
-         escp_wen,
-         rem_df,
-         file = here('analysis/data/derived_data',
-                     paste0('wen_', yr, '.rda')))
 
+    if(save_rda & !save_by_year) {
+      if(is.null(save_file_name)) {
+        if(length(query_year) > 1) {
+          save_file_name <- paste0('wen_',
+                                   paste(min(query_year),
+                                         max(query_year),
+                                         sep = "-"),
+                                   '.rda')
+        } else {
+          save_file_name <- paste0('wen_',
+                                   query_year,
+                                   '.rda')
+        }
+      }
+      save(redd_df,
+           wen_tags,
+           sex_err,
+           fpr_df,
+           trib_spawners,
+           escp_wen,
+           rem_df,
+           file = paste(save_file_path,
+                        save_file_name,
+                        sep = "/"))
+    } else {
+
+      tmp_file <- tempfile(fileext = ".rda")
+
+      save(redd_df,
+           wen_tags,
+           sex_err,
+           fpr_df,
+           trib_spawners,
+           escp_wen,
+           rem_df,
+           file = tmp_file)
+
+      load(tmp_file,
+           envir = .GlobalEnv)
+
+      file.remove(tmp_file)
+      rm(tmp_file)
+    }
   }
-
 
 }
