@@ -10,6 +10,28 @@ institute:
   - wdfw: Washington Department of Fish & Wildlife
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output: 
+    bookdown::pdf_document2:
+      fig_caption: yes
+      fig_height: 5
+      fig_width: 6
+      toc: yes
+      includes:
+        in_header: ../templates/header_wdfw.tex
+      pandoc_args:
+      - --lua-filter=../templates/scholarly-metadata.lua
+      - --lua-filter=../templates/author-info-blocks2.lua
+      - --lua-filter=../templates/pagebreak.lua
+      extra_dependencies: ["flafter"]
+    bookdown::word_document2:
+      fig_caption: yes
+      fig_height: 5
+      fig_width: 6
+      toc: yes
+      reference_docx: "../templates/ReportTemplate.docx" # Insert path for the DOCX file
+      pandoc_args:
+      - --lua-filter=../templates/scholarly-metadata.lua
+      - --lua-filter=../templates/author-info-blocks.lua
+      - --lua-filter=../templates/pagebreak.lua
     wdfwTemplates::wdfw_html_format2:
       fig_caption: yes
       fig_height: 6
@@ -22,41 +44,6 @@ output:
       pandoc_args:
       - --lua-filter=../templates/scholarly-metadata.lua
       - --lua-filter=../templates/author-info-blocks.lua
-      - --lua-filter=../templates/pagebreak.lua
-    bookdown::html_document2:
-      fig_caption: yes
-      fig_height: 6
-      fig_width: 6
-      toc: yes
-      toc_depth: 3
-      toc_float:
-        collapsed: yes
-        smooth_scroll: yes
-      theme: simplex
-      pandoc_args:
-      - --lua-filter=../templates/scholarly-metadata.lua
-      - --lua-filter=../templates/author-info-blocks.lua
-      - --lua-filter=../templates/pagebreak.lua
-    bookdown::word_document2:
-      fig_caption: yes
-      fig_height: 4
-      fig_width: 6
-      toc: yes
-      reference_docx: "../templates/ReportTemplate.docx" # Insert path for the DOCX file
-      pandoc_args:
-      - --lua-filter=../templates/scholarly-metadata.lua
-      - --lua-filter=../templates/author-info-blocks.lua
-      - --lua-filter=../templates/pagebreak.lua
-    bookdown::pdf_document2:
-      fig_caption: yes
-      fig_height: 5
-      fig_width: 6
-      toc: yes
-      includes:
-        in_header: ../templates/header_wdfw.tex
-      pandoc_args:
-      - --lua-filter=../templates/scholarly-metadata.lua
-      - --lua-filter=../templates/author-info-blocks2.lua
       - --lua-filter=../templates/pagebreak.lua
 bibliography:
 - references.bib
@@ -96,6 +83,8 @@ library(knitr)
 library(kableExtra)
 library(english)
 
+devtools::load_all()
+
 # set default plotting theme
 theme_set(theme_bw())
 
@@ -120,9 +109,14 @@ spp = "Steelhead"
 # how many observers were on each survey?
 n_observers = "two"
 
-# load data
-load(here('analysis/data/derived_data',
-          paste0('wen_', yr, '.rda')))
+# query and prep data
+prep_wen_sthd_data(query_year = yr,
+                   n_observers = n_observers,
+                   save_rda = F)
+
+# # load data
+# load(here('analysis/data/derived_data',
+#           paste0('wen_', yr, '.rda')))
 
 # load data from model fitting
 data("two_obs_sthd")
@@ -293,8 +287,7 @@ print_mod_summ(species = spp,
         caption = "Net error model covariates and coefficients.") %>%
   kable_styling(bootstrap_options = c("striped", 
                                       "hover"),
-                latex_options = c("striped",
-                                  "hold_position"))
+                latex_options = c("striped"))
 ```
 
 ## Data
@@ -356,15 +349,20 @@ In some years, we have noticed a discrepancy in the sex calls at Priest Rapids a
 After translating estimates of redds to estimates of spawners by origin, we can then compare the spawner estimates to escapement estimates made using PIT tags, and estimate a prespawn mortality rate. Taking the total PIT-tag based escapement estimate, by origin, to the Wenatchee, we then subtract any fish removed at Tumwater or Dryden for broodstock or surplus, as well as any deaths due to harvest (Table \@ref(tab:removals)), and then subtract the total estimate of spawners, including the tributaries, to provide an estimate of how many fish succumbed to prespawn mortality. Dividing that number by the total escapement estimate provides an estimate of the prespawn mortality rate, by origin, across the entire Wenatchee population. 
 
 ```{r removals}
-rem_df %>%
-  select(-location) |> 
-  spread(origin, removed)  |> 
+rem_df |> 
+  select(-population) |> 
+  pivot_wider(names_from = origin, 
+              values_from = removed,
+              values_fill = 0)  |> 
   clean_names("title") |> 
   kable(caption = "Known number of fish removed at dams or due to harvest, by origin.",
         booktabs = T) %>%
   kable_styling(bootstrap_options = c("striped", 
                                       "hover"),
-                latex_options = c("striped"))
+                latex_options = c("striped",
+                                  "scale_down")) |> 
+  column_spec(c(2:4),
+              width = "1in")
 ```
 
 If either origin had a higher estimates of spawners compared to escapement, we fixed our prespawn mortality estimate at 0, reflecting a very low level of prespawn mortality. There is uncertainty in both the escapement and spawner estimates, which could explain why these types of scenarios could arise. 
@@ -409,7 +407,9 @@ ps_mort_wen = escp_wen %>%
   
 ```
 
+
 \newpage
+
 
 # Results
 
@@ -442,7 +442,9 @@ redd_results %>%
                                       "hover"),
                 latex_options = c("striped", 
                                   "scale_down",
-                                  "repeat_header"))
+                                  "repeat_header")) |> 
+  column_spec(column = c(4:9),
+              width = "0.5in")
 ```
 
 ```{r gauc-plots, fig.cap = "Plots of observed redd counts (black dots) through time for each qualifying index reach, and the fitted curve from the GAUC model (blue line) with associated uncertainty (gray)."}
@@ -498,10 +500,13 @@ summ_redd_tab = results_lst$summ_est %>%
 
 summ_redd_tab %>%
   rename(`# Reaches` = n_rchs,
-         `Observed Redds ` = strm_obs,
+         `Observed Redds` = strm_obs,
          `Estimated Redds` = strm_est,
          `Std. Err. Redds` = strm_se,
          `Redds CV` = redds_cv) %>%
+  clean_names("title") |> 
+  rename(`# Reaches` = `Number Reaches`,
+         `Redds CV` = `Redds Cv`) |> 
   kable(digits = c(rep(1, 6), 1, 3),
         booktabs = T,
         format.args = list(drop0trailing = T),
@@ -513,13 +518,17 @@ summ_redd_tab %>%
   row_spec(row = nrow(summ_redd_tab) - 1,
            hline_after = T) %>%
   row_spec(row = nrow(summ_redd_tab), 
-           bold = T)
+           bold = T) |> 
+  column_spec(column = 3,
+              width = "1in") |> 
+  column_spec(column = c(4:8),
+              width = "0.5in")
   
 ```
 
 ## Spawner Estimates
 
-Demographic data about sex and origin were derived from the PIT tags detected within each area (Table \@ref(tab:pit-tag-tab). 
+Demographic data about sex and origin were derived from the PIT tags detected within each area (Table \@ref(tab:pit-tag-tab)). 
 
 ```{r pit-tag-tab}
 wen_tags %>% 
@@ -553,7 +562,7 @@ fpr_df %>%
                 'Above Tumwater' = 'Above Tumwater (mainstem)')) %>%
   kable(digits = 3,
         booktabs = T,
-        caption = "Fish per redd and hatchery / natural origin proportion estimates.",
+        caption = "Fish per redd and hatchery origin proportion estimates.",
         col.names = c('Area', 'Fish / redd', 'FpR Std. Error', 'Prop. Hatchery', 'Prop Std. Error')) %>%
   kable_styling(bootstrap_options = c("striped", "hover"),
                 latex_options = "striped")
@@ -573,8 +582,7 @@ spwn_rch %>%
                              ~ sqrt(sum(.^2, na.rm = T)))) %>%
               mutate(h_cv = Hatchery_SE / Hatchery,
                      n_cv = Natural_SE / Natural,
-                     river = "Total",
-                     location = "Total") %>%
+                     river = "Total") %>%
               mutate(across(c(Hatchery, Natural),
                             round_half_up))) %>%
   mutate(h_prnt = paste0(Hatchery, " (", if_else(is.na(h_cv), '-',
@@ -583,16 +591,21 @@ spwn_rch %>%
                                                 as.character(round(n_cv, 2))), ")")) %>%
   select(River = river, 
          Area = location, 
+         Reach = reach,
          Type = type, 
          Natural = n_prnt, Hatchery = h_prnt) %>%
   kable(caption = "Estimates (CV) of spawners by reach or tributary and origin.",
-        booktabs = T) %>%
+        booktabs = T,
+        longtable = T) %>%
   kable_styling(bootstrap_options = c("striped", "hover"),
-                latex_options = "striped") %>%
+                latex_options = c("striped",
+                                  "repeat_header")) %>%
   row_spec(row = nrow(spwn_rch),
            hline_after = T) %>%
   row_spec(row = nrow(spwn_rch) + 1, 
-           bold = T)
+           bold = T) |> 
+  column_spec(column = 2,
+              width = "1.5in")
 ```
 
 
@@ -611,8 +624,7 @@ spwn_rch %>%
                    ~ sqrt(sum(.^2, na.rm = T)))) %>%
               mutate(h_cv = Hatchery_SE / Hatchery,
                      n_cv = Natural_SE / Natural,
-                     river = "Total",
-                     location = "Total")) %>%
+                     river = "Total")) %>%
   mutate(across(c(Hatchery, Natural),
                 round_half_up)) %>%
   # arrange(location) %>%
@@ -633,7 +645,7 @@ spwn_rch %>%
   kable(caption = "Estimates (CV) of spawners by area and origin.",
         booktabs = T) %>%
   kable_styling(bootstrap_options = c("striped", "hover"),
-                latex_options = "striped") %>%
+                latex_options = c("striped")) %>%
   row_spec(row = n_distinct(spwn_rch$location),
            hline_after = T) %>%
   row_spec(row = n_distinct(spwn_rch$location) + 1, 
@@ -661,16 +673,18 @@ ps_mort_wen %>%
   arrange(desc(Origin)) %>%
   kable(digits = 3,
         booktabs = T,
-        caption = "Wenatchee prespawn mortality estimates. Includes estimates (standard error) of escapement, spawners, rate of prespawn mortality, and standard error of this rate, separated by origin.") %>%
+        caption = "Wenatchee prespawn mortality estimates. Includes estimates (standard error) of escapement, spawners, rate of prespawn mortality, and standard error and coefficient of variation of this rate, separated by origin.") %>%
   kable_styling(bootstrap_options = c("striped", "hover"),
-                latex_options = "striped")
+                latex_options = c("striped"))
 ```
+
+\newpage
 
 # Discussion
 
-Most of the covariates collected in `r yr` were within the range of those in the model data set from @Murdoch2018, leading to estimates of net error in a very similar range to the model dataset (Figure \@ref(fig:covariate-comparison)). However, some reaches did not meet the minimum thresholds of number of observed redds or number of weeks with at least one new redd observed, so we used the GAUC method in only `r as.character(as.english(sum(redd_results$GAUC)))` reaches. 
+Most of the covariates collected in `r yr` were within the range of those in the model data set from @Murdoch2018, leading to estimates of net error in a very similar range to the model dataset (Figure \@ref(fig:covariate-comparison)). However, some reaches did not meet the minimum thresholds of number of observed redds or number of weeks with at least one new redd observed, so we only used the GAUC method in `r as.character(as.english(sum(redd_results$GAUC)))` reaches. 
 
-Hatchery origin steelhead PIT-tagged at Priest Rapids dam were not detected in a number of tributaries this year, leading to estimates of zero hatchery spawners in those tributaries (Table \@ref(tab:spwn-area)). Because these estimates are based on a sample of the entire Upper Columbia steelhead run, it's possible a handful of steelhead may have spawned in those tributaries, but it's potentially more likely that the estimate of zero steelhead spawners in those areas is correct.
+Hatchery and natural origin steelhead PIT-tagged at Priest Rapids dam were not detected in a number of tributaries this year, leading to estimates of zero hatchery spawners in those tributaries (Table \@ref(tab:spwn-area)). Because these estimates are based on a sample of the entire Upper Columbia steelhead run, it's possible a handful of steelhead may have spawned in those tributaries, but it's potentially more likely that the estimate of zero steelhead spawners in those areas is correct.
 
 
 <!-- Some of the estimates of prespawn mortality were zero this year, due to higher estimates of spawners compared to escapement, at least after removals had been accounted for. In some cases, there were overlapping confidence intervals between spawners and escapement, so not too much should be made of that fact, and we interpret that as at least very low levels of prespawn mortality, perhaps even none.  -->
@@ -688,12 +702,16 @@ The data for this report was collected by Washington Department of Fish and Wild
 
 \newpage
 
+# (APPENDIX) Appendices {-}
 
-# (APPENDIX) Appendices {-} 
+# Appendix A
 
-# Sex Errors at Priest Rapids {#appendA}
+## Sex Errors at Priest Rapids {#appendA}
 
 Fish collected for broodstock at various locations throughout the Upper Columbia (e.g. Wells Hatchery and within the Wenatchee) had a known sex. Based on PIT tag detections of this broodstock collection, those sexes could be compared with the sex call at Priest when the fish was initially tagged. Assuming that this error rate is systematic across the entire run within a brood year, we combined all tags with this kind of comparison. Table \@ref(tab:sex-err) shows the sample sizes and results. 
+
+These error rates were used to adjust the counts of male and female tags within particular spawning areas before re-calculating the fish/redd estimate. For example, the adjusted number of males would be the initial number of males, minus the number of initial males times the error rate for male identification, plus the number of initial females times the error rate for female identification. 
+
 
 ```{r sex-err}
 sex_err %>%
@@ -703,7 +721,8 @@ sex_err %>%
     x |> 
       str_replace("_", " ") |> 
       str_to_title() |> 
-      str_replace("Ci", "CI")
+      str_replace("ci", "CI") |> 
+      str_replace("Se$", "SE")
   }) %>%
   kable(digits = 3,
         booktabs = T,
@@ -712,4 +731,3 @@ sex_err %>%
   kable_styling()
 ```
 
-These error rates were used to adjust the counts of male and female tags within particular spawning areas before re-calculating the fish/redd estimate. For example, the adjusted number of males would be the initial number of males, minus the number of initial males times the error rate for male identification, plus the number of initial females times the error rate for female identification. 
