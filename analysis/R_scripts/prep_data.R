@@ -1,7 +1,7 @@
 # Author: Kevin See
 # Purpose: Prep steelhead redd data and PIT tag data from the Wenatchee
 # Created: 2/3/2023
-# Last Modified: 2/3/2023
+# Last Modified: 2/10/2023
 # Notes: R will send error if any of the Excel files are open on the user's computer
 
 # #-----------------------------------------------------------------
@@ -34,8 +34,6 @@ library(here)
 library(DescTools)
 library(PITcleanr)
 library(sroem)
-# library(SthdReddsWenatchee)
-devtools::load_all()
 
 #-----------------------------------------------------------------
 # what year(s) are being prepped
@@ -46,4 +44,19 @@ n_observers = "two"
 # gather, prepare, wrangle data, and save relevant pieces as .rda objects
 # one for each year
 prep_wen_sthd_data(query_year = yrs,
-                   n_observers = n_observers)
+                   n_observers = n_observers,
+                   save_rda = T)
+
+
+#-----------------------------------------------------------------
+# Methow
+# what year(s) are being prepped
+yrs = 2021:2022
+# how many observers were used for these surveys?
+n_observers = "two"
+
+# gather, prepare, wrangle data, and save relevant pieces as .rda objects
+# one for each year
+prep_met_sthd_data(query_year = yrs,
+                   n_observers = n_observers,
+                   save_rda = T)
