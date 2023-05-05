@@ -5,8 +5,6 @@
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/wdfw-fp/SthdReddsWenatchee/master?urlpath=rstudio)
 
-This is a test!
-
 This repository contains the code and reports detailing estimates of
 total steelhead redds in the Wenatchee subbasin, after accounting for
 modeled observer error.
