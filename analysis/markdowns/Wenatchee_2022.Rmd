@@ -122,7 +122,7 @@ prep_wen_sthd_data(query_year = yr,
 data("two_obs_sthd")
 
 # check we have the right year
-if(unique(year(redd_df$survey_date)) != yr) {
+if(unique(year(redd_df$survey_date[!is.na(redd_df$survey_date)])) != yr) {
   print("Incorrect year")
 }
 
@@ -450,7 +450,8 @@ redd_results %>%
 
 ```{r gauc-plots, fig.pos = "H", fig.cap = "Plots of observed redd counts (black dots) through time for each qualifying index reach, and the fitted curve from the GAUC model (blue line) with associated uncertainty (gray)."}
 redd_results %>%
-  filter(GAUC) %>%
+  filter(GAUC,
+         correct_curve) %>%
   select(river:survey_type, data) %>%
   unnest(cols = c(data)) %>%
   group_by(river, reach, index) %>%
