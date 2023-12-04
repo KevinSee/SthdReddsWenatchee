@@ -1,6 +1,6 @@
 ---
 title: "Estimates of Wenatchee Steelhead Redds and Spawners"
-subtitle: "Spawn Year 2022"
+subtitle: "Spawn Year 2023"
 author:
   - Kevin See:
       email: Kevin.See@dfw.wa.gov
@@ -10,6 +10,19 @@ institute:
   - wdfw: Washington Department of Fish & Wildlife
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output: 
+    wdfwTemplates::wdfw_html_format2:
+      fig_caption: yes
+      fig_height: 6
+      fig_width: 6
+      toc: yes
+      toc_depth: 3
+      toc_float:
+        collapsed: yes
+        smooth_scroll: yes
+      pandoc_args:
+      - --lua-filter=../templates/scholarly-metadata.lua
+      - --lua-filter=../templates/author-info-blocks.lua
+      - --lua-filter=../templates/pagebreak.lua
     bookdown::pdf_document2:
       extra_dependencies: ["placeins"]
       keep_tex: FALSE
@@ -24,19 +37,6 @@ output:
       - --lua-filter=../templates/author-info-blocks2.lua
       - --lua-filter=../templates/pagebreak.lua
       # extra_dependencies: ["flafter"]
-    wdfwTemplates::wdfw_html_format2:
-      fig_caption: yes
-      fig_height: 6
-      fig_width: 6
-      toc: yes
-      toc_depth: 3
-      toc_float:
-        collapsed: yes
-        smooth_scroll: yes
-      pandoc_args:
-      - --lua-filter=../templates/scholarly-metadata.lua
-      - --lua-filter=../templates/author-info-blocks.lua
-      - --lua-filter=../templates/pagebreak.lua
     bookdown::word_document2:
       fig_caption: yes
       fig_height: 5
@@ -105,7 +105,7 @@ if(doc.type == 'docx') {
 
 ```{r load-data}
 # what year is this report for?
-yr = 2022
+yr = 2023
 # what species is this report for?
 spp = "Steelhead"
 # how many observers were on each survey?
@@ -238,9 +238,9 @@ spwn_rch <-
   bind_rows(trib_spawners %>%
               # for tributary estimates, make any 0s NAs
               mutate(across(spawners:uci,
-                ~ if_else(spawners == 0 & spawners_se == 0,
-                          NA_real_,
-                          .))) %>%
+                            ~ if_else(spawners == 0 & spawners_se == 0,
+                                      NA_real_,
+                                      .))) %>%
               rename(spawners_SE = spawners_se) %>%
               pivot_wider(names_from = origin,
                           values_from = c(spawners,
@@ -394,7 +394,7 @@ rem_df |>
               values_from = removed,
               values_fill = 0)  |> 
   clean_names("title") |> 
-  kable(caption = "Known number of fish removed at particular sites or due to harvest, by origin.",
+  kable(caption = "Known number of fish removed at dams or due to harvest, by origin.",
         booktabs = T) %>%
   kable_styling(bootstrap_options = c("striped", 
                                       "hover"),
@@ -462,7 +462,9 @@ ps_mort_wen = escp_wen %>%
 
 ## Redd estimates
 
-The estimated net error, observed redds and estimates of redds at the reach scale are shown in Table \@ref(tab:redd-est-rch). Plots of the new redds and the GAUC fit to those data are shown in Figure \@ref(fig:gauc-plots). The results are summarized by major areas and population scale in Table \@ref(tab:redd-est-strm). 
+The estimated net error, observed redds and estimates of redds at the reach scale are shown in Table \@ref(tab:redd-est-rch). 
+<!-- Plots of the new redds and the GAUC fit to those data are shown in Figure \@ref(fig:gauc-plots).  -->
+The results are summarized by major areas and population scale in Table \@ref(tab:redd-est-strm). 
 
 ```{r redd-est-rch, fig.pos = "h"}
 redd_results %>%
@@ -496,31 +498,39 @@ redd_results %>%
 ```
 
 ```{r gauc-plots, fig.pos = "H", fig.cap = "Plots of observed redd counts (black dots) through time for each qualifying index reach, and the fitted curve from the GAUC model (blue line) with associated uncertainty (gray)."}
-redd_results %>%
+gauc_rchs <-
+  redd_results %>%
   filter(GAUC,
          correct_curve) %>%
-  select(river:survey_type, data) %>%
-  unnest(cols = c(data)) %>%
-  group_by(river, reach, index) %>%
-  mutate(survey = 1:n()) %>%
-  ungroup() %>%
-  ggplot(aes(x = survey, 
-             y = new_redds,
-             group = reach)) +
-  geom_point() +
-  facet_wrap(~ reach, 
-             scales='free',
-             ncol = 2) +
-  stat_smooth(method = 'glm', 
-              formula = y ~ x + I(x^2), 
-              method.args = list(family = quasipoisson), 
-              fullrange = T, 
-              se = T) + 
-  labs(x = 'Survey Number', 
-       y = 'New Redds', 
-       title='GAUC Reaches') +
-  scale_x_continuous(breaks = scales::pretty_breaks()) +
-  theme(strip.text = element_text(size=12))
+  nrow()
+
+if(gauc_rchs > 0) {
+  redd_results %>%
+    filter(GAUC,
+           correct_curve) %>%
+    select(river:survey_type, data) %>%
+    unnest(cols = c(data)) %>%
+    group_by(river, reach, index) %>%
+    mutate(survey = 1:n()) %>%
+    ungroup() %>%
+    ggplot(aes(x = survey, 
+               y = new_redds,
+               group = reach)) +
+    geom_point() +
+    facet_wrap(~ reach, 
+               scales='free',
+               ncol = 2) +
+    stat_smooth(method = 'glm', 
+                formula = y ~ x + I(x^2), 
+                method.args = list(family = quasipoisson), 
+                fullrange = T, 
+                se = T) + 
+    labs(x = 'Survey Number', 
+         y = 'New Redds', 
+         title='GAUC Reaches') +
+    scale_x_continuous(breaks = scales::pretty_breaks()) +
+    theme(strip.text = element_text(size=12))
+}
 
 ```
 
@@ -681,9 +691,9 @@ spwn_rch %>%
                 latex_options = c("striped",
                                   "hold_position",
                                   "repeat_header")) %>%
-                # latex_options = c("striped",
-                #                   "hold_position")) %>%
-
+  # latex_options = c("striped",
+  #                   "hold_position")) %>%
+  
   row_spec(row = nrow(spwn_rch),
            hline_after = T) %>%
   row_spec(row = nrow(spwn_rch) + 1,
@@ -803,7 +813,7 @@ ps_mort_wen %>%
 
 # Discussion
 
-Most of the covariates collected in `r yr` were within the range of those in the model data set from @Murdoch2018, leading to estimates of net error in a very similar range to the model dataset (Figure \@ref(fig:covariate-comparison)). However, some reaches did not meet the minimum thresholds of number of observed redds or number of weeks with at least one new redd observed, so we only used the GAUC method in `r as.character(as.english(sum(redd_results$GAUC)))` reaches. 
+Most of the covariates collected in `r yr` were within the range of those in the model data set from @Murdoch2018, leading to estimates of net error in a very similar range to the model dataset (Figure \@ref(fig:covariate-comparison)). However, none of the reaches met the minimum thresholds of number of observed redds or number of weeks with at least one new redd observed, so we did not use the GAUC method for any reaches this year. 
 
 Neither hatchery nor natural origin steelhead PIT-tagged at Priest Rapids dam were detected in a few tributaries this year, so we did not produce estimates of spawners in those tributaries (Table \@ref(tab:spwn-area)). Because these estimates are based on a sample of the entire Upper Columbia steelhead run, it's possible a handful of steelhead may have spawned in those tributaries, but it's potentially more likely that there were zero steelhead spawners in those areas.
 

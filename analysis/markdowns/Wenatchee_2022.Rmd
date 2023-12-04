@@ -10,6 +10,20 @@ institute:
   - wdfw: Washington Department of Fish & Wildlife
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output: 
+    bookdown::pdf_document2:
+      extra_dependencies: ["placeins"]
+      keep_tex: FALSE
+      fig_caption: yes
+      fig_height: 5
+      fig_width: 6
+      toc: yes
+      includes:
+        in_header: ../templates/header_wdfw.tex
+      pandoc_args:
+      - --lua-filter=../templates/scholarly-metadata.lua
+      - --lua-filter=../templates/author-info-blocks2.lua
+      - --lua-filter=../templates/pagebreak.lua
+      # extra_dependencies: ["flafter"]
     wdfwTemplates::wdfw_html_format2:
       fig_caption: yes
       fig_height: 6
@@ -23,18 +37,6 @@ output:
       - --lua-filter=../templates/scholarly-metadata.lua
       - --lua-filter=../templates/author-info-blocks.lua
       - --lua-filter=../templates/pagebreak.lua
-    bookdown::pdf_document2:
-      fig_caption: yes
-      fig_height: 5
-      fig_width: 6
-      toc: yes
-      includes:
-        in_header: ../templates/header_wdfw.tex
-      pandoc_args:
-      - --lua-filter=../templates/scholarly-metadata.lua
-      - --lua-filter=../templates/author-info-blocks2.lua
-      - --lua-filter=../templates/pagebreak.lua
-      extra_dependencies: ["flafter"]
     bookdown::word_document2:
       fig_caption: yes
       fig_height: 5
@@ -79,6 +81,7 @@ library(magrittr)
 library(msm)
 library(sroem)
 library(here)
+library(readxl)
 library(knitr)
 library(kableExtra)
 library(english)
@@ -112,6 +115,7 @@ n_observers = "two"
 # query and prep data
 prep_wen_sthd_data(query_year = yr,
                    n_observers = n_observers,
+                   phos_data = "escapement",
                    save_rda = F)
 
 # # load data
@@ -171,7 +175,25 @@ mainstm_est = results_lst$summ_est |>
 ```
 
 ```{r spawner-estimate}
-spwn_rch = redd_results %>%
+# # for tributary estimates, make any 0s NAs
+# trib_NAs <-
+#   trib_spawners |>
+#   filter(spawners == 0,
+#          spawners_se == 0) |>
+#   select(origin,
+#          location) |>
+#   mutate(na_spwn = T)
+#   mutate(across(origin,
+#                 ~ recode(.,
+#                          "Hatchery" = "na_hos",
+#                          "Natural" = "na_nos")),
+#          value = T) |>
+#   pivot_wider(names_from = origin,
+#               values_from = value)
+
+
+spwn_rch <-
+  redd_results %>%
   select(river, location, reach, index, redd_est, redd_se) %>%
   left_join(fpr_df %>%
               select(location, starts_with('fpr')),
@@ -183,54 +205,67 @@ spwn_rch = redd_results %>%
   mutate(Tot_Spawners = redd_est * fpr,
          Hatchery = redd_est * fpr * phos,
          Natural = redd_est * fpr * (1 - phos),
-         Hatchery_SE = ifelse(Tot_Spawners > 0, 
+         Hatchery_SE = ifelse(Tot_Spawners > 0,
                               deltamethod(~ x1 * x2 * x3,
                                           mean = c(redd_est, fpr, phos),
                                           cov = diag(c(redd_se, fpr_se, phos_se)^2)),
                               NA),
-         Natural_SE = ifelse(Tot_Spawners > 0, 
-                              deltamethod(~ x1 * x2 * (1 - x3),
-                                          mean = c(redd_est, fpr, phos),
-                                          cov = diag(c(redd_se, fpr_se, phos_se)^2)),
-                              NA)) %>%
+         Natural_SE = ifelse(Tot_Spawners > 0,
+                             deltamethod(~ x1 * x2 * (1 - x3),
+                                         mean = c(redd_est, fpr, phos),
+                                         cov = diag(c(redd_se, fpr_se, phos_se)^2)),
+                             NA),
+         Hatchery_lci = qnorm(0.025, Hatchery, Hatchery_SE),
+         Hatchery_uci = qnorm(0.975, Hatchery, Hatchery_SE),
+         Natural_lci = qnorm(0.025, Natural, Natural_SE),
+         Natural_uci = qnorm(0.975, Natural, Natural_SE)) %>%
   ungroup() %>%
   mutate(reach = factor(reach,
                         levels = c(paste0('W', 1:10),
                                    "C1",
                                    "N1",
                                    "P1"))) %>%
-  select(river, location, reach, 
-         type = index, 
-         Hatchery:Natural_SE) %>%
+  select(river, location, reach,
+         type = index,
+         Hatchery:Natural_uci) %>%
   mutate(across(type,
-                recode,
-                'Y' = 'Index',
-                'N' = 'Non-Index'),
+                ~ recode(.,
+                         'Y' = 'Index',
+                         'N' = 'Non-Index')),
          across(location,
-                fct_recode,
-                "Below Tumwater (mainstem)" = "Below Tumwater",
-                "Above Tumwater (mainstem)" = "Above Tumwater")) %>%
+                ~ fct_recode(.,
+                             "Below Tumwater (mainstem)" = "Below Tumwater",
+                             "Above Tumwater (mainstem)" = "Above Tumwater"))) %>%
   bind_rows(trib_spawners %>%
+              # for tributary estimates, make any 0s NAs
+              mutate(across(spawners:uci,
+                ~ if_else(spawners == 0 & spawners_se == 0,
+                          NA_real_,
+                          .))) %>%
               rename(spawners_SE = spawners_se) %>%
               pivot_wider(names_from = origin,
                           values_from = c(spawners,
-                                          spawners_SE),
+                                          spawners_SE,
+                                          lci, uci),
                           names_glue = "{origin}_{.value}") %>%
               rlang::set_names(function(x) str_remove(x, "_spawners")) %>%
               mutate(river = location) %>%
               mutate(type = 'DABOM') %>%
               select(-spawn_year)) %>%
-  mutate(location = factor(location, levels = c('Below Tumwater (mainstem)',
-                                                'Above Tumwater (mainstem)',
-                                                'Icicle', 
-                                                'Peshastin', 
-                                                'Mission', 
-                                                'Chumstick', 
-                                                'Chiwaukum', 
-                                                'Chiwawa', 
-                                                'Nason', 
-                                                'Little Wenatchee', 
-                                                'White River'))) %>%
+  mutate(across(ends_with("lci"),
+                ~ if_else(. < 0, 0, .))) |>
+  mutate(location = factor(location,
+                           levels = c('Below Tumwater (mainstem)',
+                                      'Above Tumwater (mainstem)',
+                                      'Icicle',
+                                      'Peshastin',
+                                      'Mission',
+                                      'Chumstick',
+                                      'Chiwaukum',
+                                      'Chiwawa',
+                                      'Nason',
+                                      'Little Wenatchee',
+                                      'White River'))) %>%
   arrange(location, reach, type) %>%
   mutate(h_cv = Hatchery_SE / Hatchery,
          n_cv = Natural_SE / Natural)
@@ -261,8 +296,8 @@ $$
 where $F_i$ is the number of redds the surveyor reported and $V_i$ is the true number of redds in the reach. Therefore, if we have an estimate of net error ($\hat{NE_i}$), we can calculate the true number of redds based on that estimate and the number of redds the surveyor reported, $F_i$:
 
 \begin{equation}
-  V_i = \frac{F_i}{\hat{NE_i} + 1}
-  (\#eq:net-error)
+V_i = \frac{F_i}{\hat{NE_i} + 1}
+(\#eq:net-error)
 \end{equation}
 
 
@@ -287,8 +322,11 @@ print_mod_summ(species = spp,
         caption = "Net error model covariates and coefficients.") %>%
   kable_styling(bootstrap_options = c("striped", 
                                       "hover"),
-                latex_options = c("striped"))
+                latex_options = c("striped",
+                                  "hold_position"))
 ```
+
+\FloatBarrier
 
 ## Data
 
@@ -340,9 +378,11 @@ When summing reach-scale estimates to obtain estimates at the stream scale, an a
 
 Estimates of escapement to various tributaries in the Wenatchee were made using a Dam Adult Branch Occupancy Model (DABOM) [@Waterhouse2020] based on PIT tag detections of fish tagged at Priest Rapids dam. All fish that escaped to the various tributaries were assumed to be spawners (i.e. prespawn mortality only occurs in the mainstem). Reaches below the PIT tag arrays in some tributaries were surveyed for redds, but we assumed there was no observer error in those reaches. 
 
-To convert estimates of redds in mainstem areas into estimates of natural and hatchery spawners, the estimates of redds were multiplied by a fish per redd (FpR) estimate and then by the proportion of hatchery or wild fish. The fish per redd estimate was based on PIT tags from the branching patch-occupancy model observed to move into the lower or upper Wenatchee (below or above Tumwater dam), but not into tributaries upstream of Tumwater. FpR was calculated as the ratio of male to female fish, plus 1. Reaches W1 - W7 are below Tumwater, while reaches W8 - W10 are above Tumwater. Similarly, the proportion of hatchery and natural origin fish was calculated from the same group of PIT tags for areas above and below Tumwater. For reaches in tributaries below the tributary PIT tag array, FpR and proportion hatchery were calculated based on observed PIT tags moving into the lower regions of each tributary.
+To convert estimates of redds in mainstem areas into estimates of natural and hatchery spawners, the estimates of redds were multiplied by a fish per redd (FpR) estimate and then by the proportion of hatchery or wild fish. The fish per redd estimate was based on PIT tags from the branching patch-occupancy model observed to move into the lower or upper Wenatchee (below or above Tumwater dam), but not into tributaries upstream of Tumwater. FpR was calculated as the ratio of male to female fish, plus 1. Reaches W1 - W7 are below Tumwater, while reaches W8 - W10 are above Tumwater. For reaches in tributaries below the tributary PIT tag array, FpR was calculated based on observed PIT tags moving into the lower regions of each tributary.
 
 In some years, we have noticed a discrepancy in the sex calls at Priest Rapids and the sex calls from broodstock collection at Wells Hatchery and in the Wenatchee. Therefore, we developed a correction factor that accounts for the error rate in female and male calls independently, and adjusts the fish / redd estimate accordingly. The error rate of sex calls at Priest are shown in Appendix \@ref(appendA) in Table \@ref(tab:sex-err).
+
+The proportion of hatchery and natural origin fish was calculated based on the ratio of hatchery to wild run escapement estimates to the lower and upper Wenatchee, as well as various tributaries. When PIT tags of both origins from the DABOM model are observed in a tributary, this ratio is equivalent to basing it on the ratio of hatchery to wild PIT tags detected in that tributary. However, if tags from only one origin are observed, we still make an estimate of escapement for the other origin, and therefore the ratio of escapement estimates rather that detected tags is more consistent with the overall methodology.
 
 ## Prespawn Mortality
 
@@ -355,7 +395,7 @@ rem_df |>
               values_from = removed,
               values_fill = 0)  |> 
   clean_names("title") |> 
-  kable(caption = "Known number of fish removed at dams or due to harvest, by origin.",
+  kable(caption = "Known number of fish removed at particular sites or due to harvest, by origin.",
         booktabs = T) %>%
   kable_styling(bootstrap_options = c("striped", 
                                       "hover"),
@@ -377,10 +417,20 @@ ps_mort_wen = escp_wen %>%
                         .groups = "drop"),
             by = "origin") %>%
   mutate(across(removed,
-                replace_na,
-                0)) %>%
-  mutate(escp = estimate - removed) %>%
+                ~ replace_na(., 0))) %>%
+  rowwise() %>%
+  mutate(
+    across(
+      c(lci, uci),
+      ~ max(0, . - removed)
+    )) |>
+  mutate(escp = max(0, estimate - removed)) %>%
+  ungroup() %>%
+  relocate(se:uci,
+           .after = escp) %>%
   left_join(spwn_rch %>%
+              mutate(across(c(Hatchery, Natural),
+                            round_half_up)) %>%
               select(-ends_with('cv')) %>%
               pivot_longer(cols = Hatchery:Natural_SE,
                            names_to = "name", 
@@ -391,10 +441,10 @@ ps_mort_wen = escp_wen %>%
                                     "spwn_est")) %>%
               pivot_wider(names_from = name, 
                           values_from = value) %>%
-              mutate(across(spwn_est,
-                            round_half_up)) %>%
+              # mutate(across(spwn_est,
+              #               round_half_up)) %>%
               group_by(origin) %>%
-              summarise(spwn_est = sum(spwn_est),
+              summarise(spwn_est = sum(spwn_est, na.rm = T),
                         spwn_se = sqrt(sum(spwn_se^2, na.rm = T))),
             by = "origin") %>%
   mutate(ps_mort = (escp - spwn_est) / escp) %>%
@@ -404,12 +454,10 @@ ps_mort_wen = escp_wen %>%
                                   cov = diag(c(se, spwn_se)^2)),
          ps_mort_cv = ps_mort_se / ps_mort) %>%
   ungroup()
-  
+
 ```
 
-
-\newpage
-
+\FloatBarrier
 
 # Results
 
@@ -497,8 +545,8 @@ summ_redd_tab = results_lst$summ_est %>%
                                ~ sqrt(sum(.^2))),
                         redds_cv = strm_se / strm_est,
                         .groups = "drop"))
-  
-  
+
+
 
 summ_redd_tab %>%
   rename(`# Reaches` = n_rchs,
@@ -526,10 +574,10 @@ summ_redd_tab %>%
               width = "1in") |> 
   column_spec(column = c(4:8),
               width = "0.5in")
-  
+
 ```
 
-\newpage
+\FloatBarrier
 
 ## Spawner Estimates
 
@@ -577,80 +625,138 @@ fpr_df %>%
 
 Combining PIT tag-based estimates of spawners in the tributaries with adjusted redd-based estimates of spawners in the mainstem areas, Table \@ref(tab:spawn-est) shows all of them, broken down by reach or tributary and origin. Table \@ref(tab:spwn-area) shows a summary of spawners by origin across various areas including the Wenatchee mainstem and each tributary.
 
-```{r spawn-est, fig.pos = "h"}
+```{r spawn-est, eval = T}
 spwn_rch %>%
-  mutate(across(c(Hatchery, Natural),
+  mutate(across(c(Hatchery, Natural,
+                  ends_with("_lci"),
+                  ends_with("_uci")),
                 round_half_up)) %>%
-  bind_rows(summarise(spwn_rch,
-                      across(c(Hatchery,
-                               Natural),
-                             sum),
-                      across(ends_with("_SE"),
-                             ~ sqrt(sum(.^2, na.rm = T)))) %>%
-              mutate(h_cv = Hatchery_SE / Hatchery,
+  bind_rows(spwn_rch %>%
+              mutate(across(c(Hatchery, Natural),
+                            round_half_up)) %>%
+              summarise(across(c(Hatchery,
+                                 Natural),
+                               ~ sum(., na.rm = T)),
+                        across(ends_with("_SE"),
+                               ~ sqrt(sum(.^2, na.rm = T)))) %>%
+              mutate(Natural_lci = qnorm(0.025, Natural, Natural_SE),
+                     Natural_uci = qnorm(0.975, Natural, Natural_SE),
+                     Hatchery_lci = qnorm(0.025, Hatchery, Hatchery_SE),
+                     Hatchery_uci = qnorm(0.975, Hatchery, Hatchery_SE),
+                     h_cv = Hatchery_SE / Hatchery,
                      n_cv = Natural_SE / Natural,
                      river = "Total") %>%
-              mutate(across(c(Hatchery, Natural),
+              mutate(across(c(Hatchery, Natural,
+                              ends_with("lci"),
+                              ends_with("uci")),
                             round_half_up))) %>%
-  mutate(h_prnt = paste0(Hatchery, " (", if_else(is.na(h_cv), '-',
-                                                 as.character(round(h_cv, 2))), ")"),
-         n_prnt = paste0(Natural, " (", if_else(is.na(n_cv), '-',
-                                                as.character(round(n_cv, 2))), ")")) %>%
-  select(River = river, 
-         Area = location, 
+  mutate(across(ends_with("_lci"),
+                ~ if_else(. < 0, 0, .))) %>%
+  mutate(h_prnt = if_else(is.na(Hatchery),
+                          "-",
+                          paste0(Hatchery, 
+                                 " (", 
+                                 if_else(!is.na(Hatchery_lci),
+                                         paste(Hatchery_lci, "-", Hatchery_uci),
+                                         "-"), 
+                                 ")")),
+         n_prnt = if_else(is.na(Natural),
+                          "-",
+                          paste0(Natural, 
+                                 " (", 
+                                 if_else(!is.na(Natural_lci),
+                                         paste(Natural_lci, "-", Natural_uci),
+                                         "-"), 
+                                 ")"))) %>%
+  select(River = river,
+         Area = location,
          Reach = reach,
-         Type = type, 
-         Natural = n_prnt, Hatchery = h_prnt) %>%
-  kable(caption = "Estimates (CV) of spawners by reach or tributary and origin.",
+         Type = type,
+         Natural = n_prnt,
+         Hatchery = h_prnt) %>%
+  kable(caption = "Estimates (95\\% CI) of spawners by reach or tributary and origin.",
         booktabs = T,
         longtable = T) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"),
+  kable_styling(bootstrap_options = c("striped",
+                                      "hover"),
                 latex_options = c("striped",
                                   "hold_position",
                                   "repeat_header")) %>%
+                # latex_options = c("striped",
+                #                   "hold_position")) %>%
+
   row_spec(row = nrow(spwn_rch),
            hline_after = T) %>%
-  row_spec(row = nrow(spwn_rch) + 1, 
-           bold = T) |> 
+  row_spec(row = nrow(spwn_rch) + 1,
+           bold = T) |>
   column_spec(column = 2,
               width = "1.5in")
+
 ```
 
 
-```{r spwn-area, fig.pos = "h"}
+```{r spwn-area, eval = T}
 spwn_rch %>%
+  mutate(across(c(Hatchery, Natural),
+                round_half_up)) %>%
   group_by(river, location) %>%
   summarize(across(c(Hatchery, Natural),
-                   sum),
+                   ~ sum(., na.rm = T)),
             across(ends_with("_SE"),
                    ~ sqrt(sum(.^2, na.rm = T))),
             .groups = "drop") %>%
-  bind_rows(summarise(spwn_rch,
-                      across(c(Hatchery, Natural),
-                   sum),
-            across(ends_with("_SE"),
-                   ~ sqrt(sum(.^2, na.rm = T)))) %>%
-              mutate(h_cv = Hatchery_SE / Hatchery,
-                     n_cv = Natural_SE / Natural,
-                     river = "Total")) %>%
-  mutate(across(c(Hatchery, Natural),
-                round_half_up)) %>%
-  # arrange(location) %>%
-  mutate(h_cv = Hatchery_SE / Hatchery,
+  bind_rows(spwn_rch %>%
+              mutate(across(c(Hatchery, Natural),
+                            round_half_up)) %>%
+              summarise(
+                across(c(Hatchery,
+                         Natural),
+                       ~ sum(., na.rm = T)),
+                across(ends_with("_SE"),
+                       ~ sqrt(sum(.^2, na.rm = T))),
+                river = "Total")) %>%
+  mutate(Natural_lci = qnorm(0.025, Natural, Natural_SE),
+         Natural_uci = qnorm(0.975, Natural, Natural_SE),
+         Hatchery_lci = qnorm(0.025, Hatchery, Hatchery_SE),
+         Hatchery_uci = qnorm(0.975, Hatchery, Hatchery_SE),
+         h_cv = Hatchery_SE / Hatchery,
          n_cv = Natural_SE / Natural) %>%
-  mutate(h_prnt = paste0(Hatchery, " (", if_else(is.na(h_cv), 
-                                                 '-', 
-                                                 as.character(round(h_cv, 2))), ")"),
-         n_prnt = paste0(Natural, " (", if_else(is.na(n_cv), 
-                                                '-', 
-                                                as.character(round(n_cv, 2))), ")")) %>%
+  mutate(across(c(Hatchery, Natural,
+                  ends_with("lci"),
+                  ends_with("uci")),
+                round_half_up)) %>%
+  mutate(across(ends_with("_lci"),
+                ~ if_else(. < 0, 0, .))) %>%
+  # mutate(h_prnt = paste0(Hatchery, " (", if_else(is.na(h_cv), 
+  #                                                '-', 
+  #                                                as.character(round(h_cv, 2))), ")"),
+  #        n_prnt = paste0(Natural, " (", if_else(is.na(n_cv), 
+  #                                               '-', 
+  #                                               as.character(round(n_cv, 2))), ")")) %>%
+  rowwise() %>%
+  mutate(h_prnt = if_else(Hatchery == 0 & Hatchery_SE == 0,
+                          "-",
+                          paste0(Hatchery, 
+                                 " (", 
+                                 if_else(!is.na(Hatchery_lci),
+                                         paste(Hatchery_lci, "-", Hatchery_uci),
+                                         "-"), 
+                                 ")")),
+         n_prnt = if_else(Natural == 0 & Natural_SE == 0,
+                          "-",
+                          paste0(Natural, 
+                                 " (", 
+                                 if_else(!is.na(Natural_lci),
+                                         paste(Natural_lci, "-", Natural_uci),
+                                         "-"), 
+                                 ")"))) %>%
   select(River = river, 
          Location = location, 
          Natural = n_prnt, 
          Hatchery = h_prnt) %>%
   relocate(Hatchery,
            .after = last_col()) %>%
-  kable(caption = "Estimates (CV) of spawners by area and origin.",
+  kable(caption = "Estimates (95\\% CI) of spawners by area and origin.",
         booktabs = T) %>%
   kable_styling(bootstrap_options = c("striped", "hover"),
                 latex_options = c("striped",
@@ -659,8 +765,10 @@ spwn_rch %>%
            hline_after = T) %>%
   row_spec(row = n_distinct(spwn_rch$location) + 1, 
            bold = T)
+
 ```
 
+\FloatBarrier
 
 ## Prespawn Mortality
 
@@ -668,11 +776,16 @@ The estimates of overall prespawn mortality within the Wenatchee population, by 
 
 ```{r ps-mort-wen, fig.pos = "H"}
 ps_mort_wen %>%
+  mutate(across(c(escp,
+                  spwn_est),
+                round_half_up)) %>%
   mutate(Escapement = paste0(round_half_up(escp), ' (', round_half_up(se), ')'),
          Spawners = paste0(round_half_up(spwn_est), ' (', round_half_up(spwn_se), ')')) %>%
-  mutate(ps_mort = if_else(escp < spwn_est, 0, ps_mort),
+  mutate(ps_mort = if_else(escp <= spwn_est, 0, ps_mort),
          ps_mort_se = if_else(escp < spwn_est, NA_real_, ps_mort_se),
-         ps_mort_cv = ps_mort_se / ps_mort) %>%
+         ps_mort_cv = if_else(ps_mort > 0,
+                              ps_mort_se / ps_mort,
+                              NA_real_)) %>%
   select(Origin = origin, 
          Escapement, Spawners, 
          `Prespawn Mortality` = ps_mort, 
@@ -684,16 +797,16 @@ ps_mort_wen %>%
         caption = "Wenatchee prespawn mortality estimates. Includes estimates (standard error) of escapement, spawners, rate of prespawn mortality, and standard error and coefficient of variation of this rate, separated by origin.") %>%
   kable_styling(bootstrap_options = c("striped", "hover"),
                 latex_options = c("striped",
-                                  "HOLD_position"))
+                                  "hold_position"))
 ```
 
-\newpage
+\FloatBarrier
 
 # Discussion
 
 Most of the covariates collected in `r yr` were within the range of those in the model data set from @Murdoch2018, leading to estimates of net error in a very similar range to the model dataset (Figure \@ref(fig:covariate-comparison)). However, some reaches did not meet the minimum thresholds of number of observed redds or number of weeks with at least one new redd observed, so we only used the GAUC method in `r as.character(as.english(sum(redd_results$GAUC)))` reaches. 
 
-Hatchery and natural origin steelhead PIT-tagged at Priest Rapids dam were not detected in a number of tributaries this year, leading to estimates of zero hatchery spawners in those tributaries (Table \@ref(tab:spwn-area)). Because these estimates are based on a sample of the entire Upper Columbia steelhead run, it's possible a handful of steelhead may have spawned in those tributaries, but it's potentially more likely that the estimate of zero steelhead spawners in those areas is correct.
+Neither hatchery nor natural origin steelhead PIT-tagged at Priest Rapids dam were detected in a few tributaries this year, so we did not produce estimates of spawners in those tributaries (Table \@ref(tab:spwn-area)). Because these estimates are based on a sample of the entire Upper Columbia steelhead run, it's possible a handful of steelhead may have spawned in those tributaries, but it's potentially more likely that there were zero steelhead spawners in those areas.
 
 
 <!-- Some of the estimates of prespawn mortality were zero this year, due to higher estimates of spawners compared to escapement, at least after removals had been accounted for. In some cases, there were overlapping confidence intervals between spawners and escapement, so not too much should be made of that fact, and we interpret that as at least very low levels of prespawn mortality, perhaps even none.  -->
@@ -713,6 +826,8 @@ The data for this report was collected by Washington Department of Fish and Wild
 
 # (APPENDIX) Appendices {-}
 
+\FloatBarrier
+
 # Appendix A
 
 ## Sex Errors at Priest Rapids {#appendA}
@@ -723,20 +838,15 @@ These error rates were used to adjust the counts of male and female tags within 
 
 
 ```{r sex-err}
-sex_err %>%
-  relocate(perc_se,
-           .after = "perc_false") |> 
-  rlang::set_names(function(x) {
-    x |> 
-      str_replace("_", " ") |> 
-      str_to_title() |> 
-      str_replace("ci", "CI") |> 
-      str_replace("Se$", "SE")
-  }) %>%
+# compile all years of sexing error rates
+read_excel("T:/DFW-Team FP Upper Columbia Escapement - General/UC_Sthd/estimates/UC_STHD_Model_Output.xlsx",
+           "Sex Error Rates") |> 
+  rename(`Lower CI` = LCI,
+         `Upper CI` = UCI) |> 
   kable(digits = 3,
         booktabs = T,
         linesep = "",
         caption = "Error rate in sex calls at Priest Rapids.") %>%
-  kable_styling()
+  kable_styling(latex_options = c("HOLD_position"))
 ```
 
