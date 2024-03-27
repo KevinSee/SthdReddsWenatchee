@@ -42,7 +42,7 @@ output:
       fig_height: 5
       fig_width: 6
       toc: yes
-      reference_docx: "../templates/ReportTemplate.docx" # Insert path for the DOCX file
+      reference_docx: "../templates/WDFW Report Template.docx" # Insert path for the DOCX file
       pandoc_args:
       - --lua-filter=../templates/scholarly-metadata.lua
       - --lua-filter=../templates/author-info-blocks.lua
@@ -331,24 +331,25 @@ print_mod_summ(species = spp,
 
 Redd counts were conducted on a nearly weekly basis for index reaches, and once during the peak spawning period for non-index reaches. The covariates in the observer error model of @Murdoch2018 were collected during each survey. The covariate of mean thalweg CV was calculated based on all measurements taken within a reach across years (assuming this covariate does not vary through time within a reach). They were compared with the covariates contained in the model data set, as well as the estimates of net error (Figure \@ref(fig:covariate-comparison)). 
 
-```{r covariate-comparison, fig.cap = "Net error covariate values. Colors correspond to either the original study (Model Data) or the reaches where the model was used in this report (Predictive Data)."}
-compare_covars(redd_df,
-               species = spp,
-               num_obs = n_observers) |> 
+```{r covariate-comparison, fig.cap = "Net error covariate values. Colors correspond to either the original study (Model Data) or the surveys where the model was used in this report (Predictive Data)."}
+redd_df |> 
+  filter(visible_redds > 0) |>
+  compare_covars(species = spp,
+                 num_obs = n_observers) |> 
   mutate(across(covariate,
-                recode,
-                "exp_sp_total_log" = "Log Surveyor Exp.",
-                "mean_discharge" = "Mean Discharge",
-                "mean_thalweg_cv" = "Mean Thalweg CV",
-                "naive_density_km" = "Obs. Redd Density",
-                "net_error" = "Net Error"),
+                ~ recode(.,
+                         "exp_sp_total_log" = "Log Surveyor Exp.",
+                         "mean_discharge" = "Mean Discharge",
+                         "mean_thalweg_cv" = "Mean Thalweg CV",
+                         "naive_density_km" = "Obs. Redd Density",
+                         "net_error" = "Net Error")),
          across(covariate,
-                factor,
-                levels = c('Mean Thalweg CV',
-                           'Obs. Redd Density',
-                           'Log Surveyor Exp.',
-                           'Mean Discharge',
-                           'Net Error'))) |> 
+                ~ factor(.,
+                         levels = c('Mean Thalweg CV',
+                                    'Obs. Redd Density',
+                                    'Log Surveyor Exp.',
+                                    'Mean Discharge',
+                                    'Net Error')))) |> 
   ggplot(aes(x = source,
              y = value,
              fill = source)) +
@@ -363,7 +364,7 @@ compare_covars(redd_df,
 
 ```
 
-Those covariates in the observer error model were collected during each survey in `r yr`, and predictions of net error were made for each survey. From these survey specific estimates of net error, a mean and standard error of net error was calculated for each reach. The standard deviation was calculated by taking the square root of the sum of the squared standard errors for all predictions within a reach.
+Those covariates in the observer error model were collected during each survey in `r yr`, but predictions of net error were made for only for surveys when visible redds were present. From these survey specific estimates of net error, a mean and standard error of net error was calculated for each reach. The standard deviation was calculated by taking the square root of the sum of the squared standard errors for all predictions within a reach.
 
 ## Estimating Redds
 
@@ -381,7 +382,7 @@ To convert estimates of redds in mainstem areas into estimates of natural and ha
 
 In some years, we have noticed a discrepancy in the sex calls at Priest Rapids and the sex calls from broodstock collection at Wells Hatchery and in the Wenatchee. Therefore, we developed a correction factor that accounts for the error rate in female and male calls independently, and adjusts the fish / redd estimate accordingly. The error rate of sex calls at Priest are shown in Appendix \@ref(appendA) in Table \@ref(tab:sex-err).
 
-The proportion of hatchery and natural origin fish was calculated based on the ratio of hatchery to wild run escapement estimates to the lower and upper Wenatchee, as well as various tributaries. When PIT tags of both origins in the DABOM model are observed in a tributary, this ratio is equivalent to basing it on the ratio of hatchery to wild PIT tags detected in that tributary. However, if tags from only one origin are observed in a particular tributary, our DABOM framework still allows us to estimate escapement of both origins. Therefore the ratio of escapement estimates rather that detected tags is more consistent with the overall methodology, and so we applied that estimator to all relevant areas.
+The proportion of hatchery and natural origin fish was calculated based on the ratio of hatchery to wild run escapement estimates to the lower and upper Wenatchee, as well as various tributaries. When PIT tags of both origins in the DABOM model are observed in a tributary, this ratio is equivalent to basing it on the ratio of hatchery to wild PIT tags detected in that tributary. However, if tags from only one origin are observed in a particular tributary, our DABOM framework still allows us to estimate escapement of both origins. Therefore the ratio of escapement estimates rather than detected tags is more consistent with the overall methodology, and so we applied that estimator to all relevant areas.
 
 ## Prespawn Mortality
 
@@ -817,7 +818,7 @@ The data for this report was collected by Washington Department of Fish and Wild
 <!-- The following line inserts a page break  -->
 \newpage
 
-# References 
+# Literature cited 
 <!-- The following line ensures the references appear here for the MS Word or HTML output files, rather than right at the end of the document (this will not work for PDF files):  -->
 <div id="refs"></div>
 

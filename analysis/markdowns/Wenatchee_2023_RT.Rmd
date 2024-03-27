@@ -1,0 +1,572 @@
+---
+title: "Estimates of Wenatchee Steelhead Spawners"
+subtitle: "Spawn Year 2023 Using Previous Estimates of Overwinter Survival"
+author:
+  - Kevin See:
+      email: Kevin.See@dfw.wa.gov
+      institute: [wdfw]
+      correspondence: true
+institute:
+  - wdfw: Washington Department of Fish & Wildlife
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+    bookdown::pdf_document2:
+      extra_dependencies: ["placeins"]
+      keep_tex: FALSE
+      fig_caption: yes
+      fig_height: 5
+      fig_width: 6
+      toc: yes
+      includes:
+        in_header: ../templates/header_wdfw.tex
+      pandoc_args:
+      - --lua-filter=../templates/scholarly-metadata.lua
+      - --lua-filter=../templates/author-info-blocks2.lua
+      - --lua-filter=../templates/pagebreak.lua
+      # extra_dependencies: ["flafter"]
+    bookdown::word_document2:
+      fig_caption: yes
+      fig_height: 5
+      fig_width: 6
+      toc: yes
+      reference_docx: "../templates/WDFW Report Template.docx" # Insert path for the DOCX file
+      pandoc_args:
+      - --lua-filter=../templates/scholarly-metadata.lua
+      - --lua-filter=../templates/author-info-blocks.lua
+      - --lua-filter=../templates/pagebreak.lua
+    wdfwTemplates::wdfw_html_format2:
+      fig_caption: yes
+      fig_height: 6
+      fig_width: 6
+      toc: yes
+      toc_depth: 3
+      toc_float:
+        collapsed: yes
+        smooth_scroll: yes
+      pandoc_args:
+      - --lua-filter=../templates/scholarly-metadata.lua
+      - --lua-filter=../templates/author-info-blocks.lua
+      - --lua-filter=../templates/pagebreak.lua
+bibliography:
+- references.bib
+csl: "../templates/american-fisheries-society.csl" # Insert path for the bib-style
+abstract: |
+  This report contains estimates of total steelhead spawners in the Wenatchee, as well as split out by spatial strata, using previous estimates of over-winter survival.
+keywords: |
+  keyword 1; keyword 2; keyword 3
+highlights: |
+  These are the highlights.
+---
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  echo = FALSE,
+  comment = "#>",
+  fig.path = "../figures/",
+  dpi = 300
+)
+
+```
+
+```{r packages}
+
+# load these packages
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(magrittr)
+library(msm)
+library(sroem)
+library(here)
+library(knitr)
+library(kableExtra)
+library(english)
+
+devtools::load_all()
+
+# set default plotting theme
+theme_set(theme_bw())
+
+# knitr options
+options(knitr.kable.NA = '-')
+
+# when knitting to Word, use this
+# what kind of document is being created?
+doc.type <- knitr::opts_knit$get('rmarkdown.pandoc.to')
+
+if(!is.null(doc.type)) {
+  if(doc.type == 'docx') {
+    options(knitr.table.format = "pandoc")
+  }}
+
+```
+
+```{r load-data}
+# what year is this report for?
+yr = 2023
+# what species is this report for?
+spp = "Steelhead"
+# how many observers were on each survey?
+n_observers = "two"
+
+# query and prep data
+prep_wen_sthd_data(query_year = yr,
+                   n_observers = n_observers,
+                   phos_data = "escapement",
+                   save_rda = F)
+```
+
+```{r rt-survival}
+# data from WDFW (Nate Fuchs' radio telemetry study)
+rt_df = tibble(year = rep(2015:2016, each = 2),
+               origin = rep(c("Hatchery", "Natural"), 2),
+               ow_fish = c(20, 25, 4, 12),
+               surv_fish = c(16, 24, 3, 9)) %>%
+  mutate(phi = surv_fish / ow_fish,
+         phi_se = sqrt((phi * (1 - phi))/ ow_fish)) |> 
+  mutate(across(origin,
+                ~ fct_rev(.)))
+
+# add years together
+rt_df <-
+  rt_df |> 
+  bind_rows(rt_df %>%
+              group_by(origin) %>%
+              summarize(across(c(ow_fish, surv_fish),
+                               sum),
+                        .groups = "drop") %>%
+              mutate(phi = surv_fish / ow_fish,
+                     phi_se = sqrt((phi * (1 - phi))/ ow_fish))) %>%
+  mutate(across(year,
+                as.factor)) %>%
+  mutate(across(year,
+                ~ fct_explicit_na(.,
+                                  na_level = "Total"))) |> 
+  arrange(year,
+          origin)
+```
+
+```{r}
+spwn_df <- escp_wen %>%
+  ungroup() %>%
+  filter(location == "Wen_all") %>%
+  left_join(rem_df %>%
+              group_by(origin) %>%
+              summarize(across(removed,
+                               sum))) %>%
+  rowwise() %>%
+  mutate(escp = max(0, estimate - removed)) %>%
+  ungroup() %>%
+  full_join(rt_df %>%
+              group_by(origin) %>%
+              summarize(across(c(ow_fish, surv_fish),
+                               sum),
+                        .groups = "drop") %>%
+              mutate(phi = surv_fish / ow_fish,
+                     phi_se = sqrt((phi * (1 - phi))/ ow_fish)) %>%
+              select(-ends_with("fish"))) %>%
+  rowwise() %>%
+  mutate(all_spwn = escp * phi) %>%
+  mutate(all_spwn_se = msm::deltamethod(~ x1 * x2,
+                                        mean = c(escp, phi),
+                                        cov = diag(c(se, phi_se)^2))) %>%
+  ungroup() %>%
+  left_join(trib_spawners %>%
+              group_by(origin) %>%
+              summarize(across(spawners,
+                               sum),
+                        across(spawners_se,
+                               ~ sqrt(sum(.^2))),
+                        .groups = "drop") %>%
+              rename(trib_spwn = spawners,
+                     trib_se = spawners_se)) %>%
+  mutate(main_spwn = all_spwn - trib_spwn,
+         main_spwn_se = sqrt(all_spwn_se^2 + trib_se^2),
+         across(main_spwn,
+                ~ if_else(. < 0, 0, .)))
+
+spwn_main = spwn_df %>%
+  mutate(location = "Mainstem",
+         spawn_year = yr) %>%
+  select(spawn_year,
+         origin,
+         location,
+         spawners = main_spwn,
+         spawners_se = main_spwn_se)
+```
+
+
+```{r spawner-estimate}
+spwn_strm = spwn_main %>%
+  mutate(lci = qnorm(0.025, spawners, spawners_se),
+         uci = qnorm(0.975, spawners, spawners_se),
+         across(lci,
+                ~ if_else(. < 0,
+                          0, .))) |> 
+  select(any_of(names(trib_spawners))) %>%
+  bind_rows(trib_spawners) %>%
+  mutate(across(location,
+                ~ factor(., 
+                         levels = c("Mainstem",
+                                    # 'Below_TUM',
+                                    # 'TUM_bb',
+                                    'Icicle', 
+                                    'Peshastin', 
+                                    'Mission', 
+                                    'Chumstick', 
+                                    'Chiwaukum', 
+                                    'Chiwawa', 
+                                    'Nason', 
+                                    'Little Wenatchee', 
+                                    'White River')))) %>%
+  arrange(location, origin)
+
+```
+
+
+\newpage
+
+# Introduction
+
+<!-- Redd counts are an established method to provide an index of adult spawners [@Gallagher2007]. However, all redd surveys were cancelled during the steelhead spawning season due to COVID-19.  -->
+
+This report provides an alternative estimate of steelhead spawners in the Wenatchee subbasin, based on results from a PIT-tag based patch-occupancy model that estimates escapement, and a radio telemetry study that estimated overwinter survival in the mainstem of the Wenatchee.
+
+# Methods
+
+## Overview
+
+Estimates of escapement to the entire Wenatchee watershed and various tributaries within the Wenatchee were made using a branching patch-occupancy model [@Waterhouse2020] based on PIT tag observations of fish tagged at Priest Rapids dam. All fish that escaped to the Wenatchee were assumed to experience overwinter survival in the mainstem, and then some fish move to the tributaries to spawn. Thus tributary escapements from the patch-occupancy model are equivalent to tributary spawners. The remaining spawners were assumed to have spawned in the mainstem (where redd counts would normally be conducted).
+
+## Data
+
+### Escapement
+
+A random sample of steelhead were trapped at Priest Rapids dam and PIT tagged. The subsequent PIT tag detections were analyzed to estimate movement rates past various PIT tag arrays, while accounting for imperfect detection, using the the branching patch-occupancy model described in @Waterhouse2020, and implemented with the [DABOM R package](https://kevinsee.github.io/DABOM/). Movement rates were translated to escapement estimates by multiplying them by an estimate of total escapement past Priest Rapids dam, by origin. This was generated using a combination of dam counts, re-ascension rates, proportion of hatchery and natural origin fish trapped in the ladder. 
+
+In some years, counts of steelhead at Priest Rapids dam were deemed unreliable. In those situations, we used counts at the next upstream dam, Rock Island dam, and a separate estimate of the re-ascension rate at Rock Island (by origin). We then reconstructed the escapement past Priest by dividing the Rock Island escapement by the estimated movement rates of fish from Priest Rapids to Rock Island.
+
+### Overwinter survival
+
+Estimates of overwinter survival in the Wenatchee subbasin come from a radio telemetry study, conducted over two years (2015 and 2016) in the Wenatchee [@Fuchs2021]. Steelhead in the study were both radio and PIT tagged, and zero mortality was observed in fish once they entered the tributaries of the Wenatchee. Tags were combined across both years of the study, since we are making the assumption that overwinter survival is consistent year to year. 
+
+```{r rt-table}
+rt_df %>%
+  rename(Year = year,
+         Origin = origin,
+         `Initial Fish` = ow_fish,
+         `Surviving Fish` = surv_fish,
+         Survival = phi,
+         SE = phi_se) %>%
+  kable(booktabs = T,
+        linesep = "",
+        digits = 2,
+        caption = "Data from the radio telemetry study, representing fish known to have escaped to the Wenatchee River.") %>%
+  kable_styling(bootstrap_options = c("striped", 
+                                      "hover"),
+                latex_options = c("striped")) %>%
+  row_spec(row = (nrow(rt_df)-1):nrow(rt_df),
+           bold = T) %>%
+  row_spec(row = nrow(rt_df) - 2,
+           hline_after = T)
+```
+
+### Known removals
+
+Before applying overwinter survivals, we must account for any fish removed at Tumwater or Dryden for brookstock or surplus, as well as any deaths due to harvest (Table \@ref(tab:removals)). 
+
+```{r removals}
+# rem_df %>%
+#   clean_names("title") |> 
+#   select(-Population) %>%
+#   spread(Origin, Removed) %>%
+#   kable(caption = "Known number of fish removed at dams or due to harvest, by origin.",
+#         booktabs = T) %>%
+#   kable_styling(bootstrap_options = c("striped", 
+#                                       "hover"),
+#                 latex_options = c("striped"))
+
+rem_df |> 
+  arrange(desc(origin)) |>
+  select(-population) |> 
+  pivot_wider(names_from = origin, 
+              values_from = removed,
+              values_fill = 0)  |> 
+  clean_names("title") |> 
+  kable(caption = "Known number of fish removed at dams or due to harvest, by origin.",
+        booktabs = T) %>%
+  kable_styling(bootstrap_options = c("striped", 
+                                      "hover"),
+                latex_options = c("striped",
+                                  "scale_down")) |> 
+  column_spec(c(2:4),
+              width = "1in")
+```
+
+## Analysis
+
+This analysis depends on estimates of escapement from the PIT-tag based patch-occupancy model, by origin. We started with escapement to the entire Wenatchee subbasin (past site LWE), and then subtracted known removals. After this, we applied an overwinter survival estimate (by origin) to determine how many fish survived to spawn. We determined how many mainstem spawners by subtracting the total number of estimated tributary spawners from the total population level estimate of spawners. 
+
+\newpage
+
+# Results
+
+## Mainstem spawners
+
+Estimates of total, tributary and mainstem spawners in the Wenatchee, by origin, are shown in Table \@ref(tab:all-spawners). 
+
+```{r all-spawners}
+spwn_df %>%
+  arrange(desc(origin)) |> 
+  mutate(across(c(estimate,
+                  lci,
+                  uci,
+                  removed,
+                  escp,
+                  all_spwn,
+                  trib_spwn,
+                  main_spwn),
+                round_half_up),
+         across(c(ends_with("se"),
+                  -phi_se),
+                ~ round(., 1)),
+         across(starts_with("phi"),
+                ~ round(., 3))) |> 
+  select(-c(location,
+            spawn_year,
+            lci,
+            uci)) |>
+  pivot_longer(-origin,
+               names_to = "Parameter") |>
+  mutate(across(value,
+                as.character)) |> 
+  pivot_wider(names_from = origin) |> 
+  mutate(across(Parameter,
+                ~ recode(.,
+                         "estimate" = "PIT Estimate",
+                         "se" = "PIT SE",
+                         "removed" = "Removed",
+                         "escp" = "Escapement",
+                         "phi" = "Overwinter Surv.",
+                         "phi_se" = "Overwinter SE",
+                         "all_spwn" = "Total Spawners",
+                         "all_spwn_se" = "Total Spawners SE",
+                         "trib_spwn" = "Trib Spawners",
+                         "trib_se" = "Trib Spawners SE",
+                         "main_spwn" = "Mainstem Spawners",
+                         "main_spwn_se" = "Mainstem Spawners SE"))) |> 
+  kable(caption = "Inputs and estimates of total, tribuary and mainstem spawners, by origin.",
+        linesep = "",
+        booktabs = T) %>%
+  kable_styling(bootstrap_options = c("striped", 
+                                      "hover"),
+                latex_options = c("striped",
+                                  "scale_down"))
+```
+
+
+## Total spawners
+
+Table \@ref(tab:spawn-est) displays estimates of spawners in all areas within the Wenatchee, as well as the total by origin.
+
+```{r spawn-est}
+spwn_strm %>%
+  bind_rows(spwn_df %>%
+              mutate(location = "Total") %>%
+              mutate(across(all_spwn,
+                            round_half_up)) %>%
+              select(origin,
+                     location,
+                     spawners = all_spwn,
+                     spawners_se = all_spwn_se)) %>%
+  mutate(spwn_cv = spawners_se / spawners,
+         spwn_cv = if_else(spwn_cv == Inf, NA_real_, spwn_cv)) %>%
+  # # print estimates and CV
+  # mutate(prnt_val = paste0(round_half_up(spawners), " (", if_else(is.na(spwn_cv), '-', as.character(round(spwn_cv, 2))), ")")) %>%
+  # print estimates and SE
+  mutate(prnt_val = paste0(round_half_up(spawners), " (", if_else(is.na(spawners_se), '-', as.character(round(spawners_se, 1))), ")")) %>%
+  select(location, origin, prnt_val) %>%
+  pivot_wider(names_from = "origin",
+              values_from = "prnt_val") %>%
+  select(Area = location,
+         Natural,
+         Hatchery) %>%
+  kable(caption = "Estimates (SE) of spawners by area and origin.",
+        booktabs = T) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"),
+                latex_options = "striped") %>%
+  row_spec(row = nrow(spwn_strm)/2,
+           hline_after = T) %>%
+  row_spec(row = nrow(spwn_strm)/2 + 1, 
+           bold = T)
+```
+
+## Comparison to Redd Counts
+
+```{r calc-total-redds}
+#-------------------------------------
+# set some thresholds
+# minimum number of total redds observed
+min_redds = 2
+# minimum number of weeks with at least one new redd observed
+min_non0_wks = 3
+#-------------------------------------
+
+results_lst <- summarize_redds(redd_df,
+                               species = spp,
+                               group_vars = c("river", "reach", "index", "survey_type"),
+                               summ_vars = c("river", "location", "index"),
+                               min_non0_wks = min_non0_wks,
+                               min_redds = min_redds,
+                               gauc = T,
+                               add_zeros = T,
+                               use_cor = T)
+
+
+redd_results <- results_lst$rch_est |> 
+  arrange(river,
+          reach,
+          index) %>%
+  relocate(river, reach, location,
+           .before = 1) |> 
+  mutate(location = if_else(location == "Tributaries",
+                            as.character(river),
+                            location))
+
+
+mainstm_est = results_lst$summ_est |> 
+  filter(location != "Tributaries") |> 
+  select(river, location,
+         index,
+         n_rchs:strm_se) |> 
+  arrange(river, 
+          location,
+          index)
+
+```
+
+
+Redd counts were conducted this year, and the total number of steelhead redds observed on the mainstem Wenatchee was `r mainstm_est |> summarize(across(strm_obs, sum)) |> pull(strm_obs)`, while the estimate of total redds, after accounting for estimated observer error, was `r mainstm_est |> summarize(across(strm_est, sum)) |> pull(strm_est)`. That includes redds built by both hatchery and natural origin steelhead. 
+
+```{r redd-est-rch, eval = F, fig.pos = "h"}
+redd_results %>%
+  filter(tot_feat > 0) |> 
+  mutate(Type = recode(index,
+                       "Y" = 'Index',
+                       "N" = "Non-Index")) %>%
+  mutate(err_cv = err_se / err_est,
+         redd_cv = redd_se / redd_est) %>%
+  select(River = river, 
+         Reach = reach, 
+         Type, 
+         # GAUC,
+         `Net Error` = err_est,
+         `Net Error SE` = err_se,
+         `Observed Redds ` = tot_feat,
+         `Estimated Redds` = redd_est,
+         `Std. Err. Redds` = redd_se,
+         `Redds CV` = redd_cv) %>%
+  kable(digits = c(rep(NA, 3), rep(3, 2), 1, 1, 1, 3),
+        format.args = list(drop0trailing = T),
+        booktabs = T,
+        caption = "Estimates of mean net error and redds for each reach.") %>%
+  kable_styling(bootstrap_options = c("striped", 
+                                      "hover"),
+                latex_options = c("striped", 
+                                  "hold_position",
+                                  "scale_down",
+                                  "repeat_header")) |> 
+  column_spec(column = c(4:9),
+              width = "0.5in")
+```
+
+```{r redd-est-strm, eval = F, fig.pos = "H"}
+summ_redd_tab = results_lst$summ_est %>%
+  select(-data,
+         -cor_mat,
+         -strm_se_naive) %>%
+  mutate(redds_cv = strm_se / strm_est) %>%
+  mutate(across(location,
+                recode,
+                'Below Tumwater' = 'Below Tumwater (mainstem)',
+                'Above Tumwater' = 'Above Tumwater (mainstem)')) %>%
+  bind_rows(results_lst$summ_est %>%
+              summarise(river = "Total",
+                        across(c(n_rchs,
+                                 strm_obs,
+                                 strm_est),
+                               sum),
+                        across(strm_se,
+                               ~ sqrt(sum(.^2))),
+                        redds_cv = strm_se / strm_est,
+                        .groups = "drop"))
+
+
+
+summ_redd_tab %>%
+  filter(strm_obs > 0) |> 
+  rename(`# Reaches` = n_rchs,
+         `Observed Redds` = strm_obs,
+         `Estimated Redds` = strm_est,
+         `Std. Err. Redds` = strm_se,
+         `Redds CV` = redds_cv) %>%
+  clean_names("title") |> 
+  rename(`# Reaches` = `Number Reaches`,
+         `Redds CV` = `Redds Cv`) |> 
+  kable(digits = c(rep(1, 6), 1, 3),
+        booktabs = T,
+        format.args = list(drop0trailing = T),
+        caption = "Estimate of redds in mainstem Wenatchee, above and below Tumwater Dam, and any tributaries surveyed.") %>%
+  kable_styling(bootstrap_options = c("striped", 
+                                      "hover"),
+                latex_options = c("striped",
+                                  "HOLD_position",
+                                  "scale_down")) %>%
+  row_spec(row = nrow(summ_redd_tab) - 1,
+           hline_after = T) %>%
+  row_spec(row = nrow(summ_redd_tab), 
+           bold = T) |> 
+  column_spec(column = 3,
+              width = "1in") |> 
+  column_spec(column = c(4:8),
+              width = "0.5in")
+
+```
+
+
+# Discussion
+
+In this analysis, we were able to estimate the number of spawners, by origin, through applying an empirical estimate of overwinter survival to total escapement estimates to the subbasin. While the estimate of natural origin spawners in the mainstem Wenatchee was very similar to redd-based estimates, the radio telemetry-based estimate of hatchery origin spawners was approximately ten times the redd-based estimate.
+
+
+# Acknowledgements
+
+The data for this report was collected by Washington Department of Fish and Wildlife, and funded by Chelan County Public Utility District.
+
+<!-- The following line inserts a page break  -->
+\newpage
+
+# References 
+<!-- The following line ensures the references appear here for the MS Word or HTML output files, rather than right at the end of the document (this will not work for PDF files):  -->
+<div id="refs"></div>
+
+<!-- \newpage -->
+
+<!-- ### Colophon -->
+
+<!-- This report was generated on `r Sys.time()` using the following computational environment and dependencies:  -->
+
+<!-- ```{r colophon, cache = FALSE} -->
+<!-- # which R packages and versions? -->
+<!-- if ("devtools" %in% installed.packages()) devtools::session_info() -->
+<!-- ``` -->
+
+<!-- The current Git commit details are: -->
+
+<!-- ```{r} -->
+<!-- # what commit is this file at?  -->
+<!-- if ("git2r" %in% installed.packages() & git2r::in_repository(path = ".")) git2r::repository(here::here())   -->
+<!-- ``` -->
