@@ -37,7 +37,7 @@ library(sroem)
 
 #-----------------------------------------------------------------
 # what year(s) are being prepped
-yrs = 2014:2022
+yrs = 2014:2023
 # how many observers were used for these surveys?
 n_observers = "two"
 
@@ -45,7 +45,8 @@ n_observers = "two"
 # one for each year
 prep_wen_sthd_data(query_year = yrs,
                    n_observers = n_observers,
-                   save_rda = T)
+                   phos_data = "tags",
+                   save_rda = F)
 
 
 #-----------------------------------------------------------------
