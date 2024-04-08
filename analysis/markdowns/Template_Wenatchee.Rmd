@@ -85,7 +85,7 @@ library(knitr)
 library(kableExtra)
 library(english)
 
-devtools::load_all()
+# devtools::load_all()
 
 # set default plotting theme
 theme_set(theme_bw())
@@ -97,8 +97,10 @@ options(knitr.kable.NA = '-')
 # what kind of document is being created?
 doc.type <- knitr::opts_knit$get('rmarkdown.pandoc.to')
 
-if(doc.type == 'docx') {
-  options(knitr.table.format = "pandoc")
+if(!is.null(doc.type)) {
+  if(doc.type == 'docx') {
+    options(knitr.table.format = "pandoc")
+  }
 }
 
 ```

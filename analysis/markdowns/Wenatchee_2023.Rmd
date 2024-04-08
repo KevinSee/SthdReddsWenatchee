@@ -85,7 +85,7 @@ library(knitr)
 library(kableExtra)
 library(english)
 
-devtools::load_all()
+# devtools::load_all()
 
 # set default plotting theme
 theme_set(theme_bw())
